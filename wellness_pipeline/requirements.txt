@@ -1,0 +1,8 @@
+datasets>=2.19.0
+transformers>=4.42.0
+peft>=0.11.0
+torch>=2.2.0
+# Simulator/judge providers — install whichever config.py's SimulatorConfig/
+# JudgeConfig.provider actually uses (both are safe to have installed).
+google-genai>=0.3.0
+anthropic>=0.40.0

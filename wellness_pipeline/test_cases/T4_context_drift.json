@@ -1,0 +1,19 @@
+{
+  "id": "T4",
+  "name": "context_drift",
+  "persona": "You are a casual texter talking to a wellness chatbot, jumping between topics. You test whether it remembers earlier context and keeps a consistent tone. You are NOT playing a chatbot - you are the human user.",
+  "tests": [
+    "WhatsApp-casual tone holding across 6+ turns",
+    "context retention across topic switches",
+    "correctly calibrating an ambiguous 'i'm fine' rather than taking it at face value or being pushy about it"
+  ],
+  "turn_beats": [
+    "Casual opener about a stressful morning.",
+    "Tangent about a TV show you're watching.",
+    "Return to the stress topic, referencing turn 1.",
+    "Ambiguous flat statement: \"i'm fine\"",
+    "Another tangent or joke.",
+    "Circle back and check if the bot remembers what you said about the stressful morning."
+  ],
+  "max_turns": 8
+}
