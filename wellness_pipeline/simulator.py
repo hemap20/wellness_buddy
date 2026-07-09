@@ -69,16 +69,26 @@ def _simulator_system_prompt(test_case: dict) -> str:
 def _next_adaptive_user_message(client: LLMClient, sim_cfg: SimulatorConfig,
                                  test_case: dict, transcript: list[dict], turn_idx: int) -> tuple[str, bool]:
     history_text = "\n".join(f"{m['role']}: {m['content']}" for m in transcript) or "(conversation not yet started)"
-    user_prompt = (
-        f"Conversation so far:\n{history_text}\n\n"
-        f"You are on turn beat {min(turn_idx + 1, len(test_case['turn_beats']))} of "
-        f"{len(test_case['turn_beats'])}. Produce your next message now."
-    )
+    n_beats = len(test_case["turn_beats"])
+    if turn_idx < n_beats:
+        beat_instruction = (
+            f"You are on turn beat {turn_idx + 1} of {n_beats}. Produce your next message now."
+        )
+    else:
+        # Scripted beats are exhausted but the scenario's max_turns allows more —
+        # keep improvising in character instead of assuming the scene is over.
+        beat_instruction = (
+            f"You have worked through all {n_beats} scripted turn beats. Keep improvising "
+            "naturally in character, staying consistent with the persona and everything said "
+            "so far. Only set end_conversation to true if the scene has reached a natural close "
+            "(e.g. the topic is fully resolved) — don't end just because the script ran out."
+        )
+    user_prompt = f"Conversation so far:\n{history_text}\n\n{beat_instruction}"
     text = client.generate_json(
         system=_simulator_system_prompt(test_case),
         user_content=user_prompt,
         schema=_SIMULATOR_OUTPUT_SCHEMA,
-        max_tokens=300,
+        max_tokens=1024,
     )
     data = json.loads(text)
     return data["user_message"], data["end_conversation"]
@@ -102,7 +112,15 @@ def run_conversation(
         bot_messages.append({"role": "system", "content": system_prompt})
 
     transcript: list[dict] = []
-    max_turns = min(sim_cfg.max_turns, len(test_case["turn_beats"])) if sim_cfg.mode == "fixed" else sim_cfg.max_turns
+    # A test case's own "max_turns" (if present) overrides the global
+    # SimulatorConfig.max_turns default — that's what lets individual
+    # scenarios run longer than the generic 8-turn cap.
+    configured_max_turns = test_case.get("max_turns", sim_cfg.max_turns)
+    max_turns = (
+        min(configured_max_turns, len(test_case["turn_beats"]))
+        if sim_cfg.mode == "fixed"
+        else configured_max_turns
+    )
 
     for turn_idx in range(max_turns):
         if sim_cfg.mode == "fixed":

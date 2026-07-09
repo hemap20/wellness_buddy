@@ -62,7 +62,7 @@ class ModelUnderTest:
     # simple "User: ... \nBot: ..." format when tokenizer.chat_template is None.
     trust_remote_code: bool = False
     max_new_tokens: int = 128
-    device: str = "auto"  # "auto" | "cpu" | "cuda" | "mps"
+    device: str = "mps"  # "auto" | "cpu" | "cuda" | "mps"
 
 
 MODELS_UNDER_TEST = [ModelUnderTest()]
@@ -99,7 +99,7 @@ SHARED_TRAINING_CONFIG = TrainingConfig()
 @dataclass
 class SimulatorConfig:
     provider: str = "gemini"  # "gemini" | "anthropic"
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-3.5-flash"
     max_turns: int = 8
     mode: str = "adaptive"  # "adaptive" | "fixed"
 
@@ -107,7 +107,7 @@ class SimulatorConfig:
 @dataclass
 class JudgeConfig:
     provider: str = "gemini"  # "gemini" | "anthropic"
-    model: str = "gemini-2.5-pro"
+    model: str = "gemini-3.5-flash"
     num_runs: int = 3
     max_json_retries: int = 2
 

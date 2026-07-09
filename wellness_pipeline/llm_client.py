@@ -26,6 +26,39 @@ def _strip_for_gemini_schema(schema: dict) -> dict:
     return schema
 
 
+def _gemini_generate_with_thinking_fallback(client, model: str, contents, config_kwargs: dict):
+    """Some Gemini models ("thinking" models) spend part of max_output_tokens on
+    an invisible reasoning pass before writing the actual answer — with a small
+    max_output_tokens the whole budget can go to reasoning and .text comes back
+    empty. Disable thinking for these simulator/judge calls (we don't need deep
+    reasoning here, just reliable structured output); if the model doesn't
+    support disabling it (e.g. some Pro-tier models require thinking_budget > 0),
+    retry once without the override."""
+    from google.genai import types
+
+    try:
+        resp = client.models.generate_content(
+            model=model, contents=contents,
+            config=types.GenerateContentConfig(
+                **config_kwargs, thinking_config=types.ThinkingConfig(thinking_budget=0)
+            ),
+        )
+    except Exception:
+        resp = client.models.generate_content(
+            model=model, contents=contents, config=types.GenerateContentConfig(**config_kwargs)
+        )
+
+    text = resp.text or ""
+    if not text.strip():
+        finish_reason = getattr(resp.candidates[0], "finish_reason", None) if resp.candidates else None
+        raise RuntimeError(
+            f"Gemini returned no text output (finish_reason={finish_reason}). "
+            "This usually means max_tokens was too low for the model's reasoning + "
+            "answer, or the response was blocked by a safety filter."
+        )
+    return text
+
+
 class LLMClient:
     def __init__(self, provider: str, model: str):
         self.provider = provider
@@ -76,18 +109,13 @@ class LLMClient:
             )
             return next(b.text for b in resp.content if b.type == "text")
         else:
-            from google.genai import types
-
             config_kwargs = dict(
                 system_instruction=system, max_output_tokens=max_tokens,
                 response_mime_type="application/json",
             )
             if schema is not None:
                 config_kwargs["response_schema"] = _strip_for_gemini_schema(schema)
-            resp = self._client.models.generate_content(
-                model=self.model, contents=user_content, config=types.GenerateContentConfig(**config_kwargs),
-            )
-            return resp.text or ""
+            return _gemini_generate_with_thinking_fallback(self._client, self.model, user_content, config_kwargs)
 
     # -- multi-turn JSON (used by judge.py's malformed-JSON retry loop) ---------
     def continue_json(self, system: str, history: list[dict], max_tokens: int = 1024) -> str:
@@ -105,8 +133,5 @@ class LLMClient:
                                parts=[types.Part(text=turn["content"])])
                 for turn in history
             ]
-            resp = self._client.models.generate_content(
-                model=self.model, contents=contents,
-                config=types.GenerateContentConfig(system_instruction=system, max_output_tokens=max_tokens),
-            )
-            return resp.text or ""
+            config_kwargs = dict(system_instruction=system, max_output_tokens=max_tokens)
+            return _gemini_generate_with_thinking_fallback(self._client, self.model, contents, config_kwargs)

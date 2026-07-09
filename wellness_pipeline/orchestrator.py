@@ -191,7 +191,7 @@ def build_parser():
     p.add_argument("--phase", type=int, required=True, choices=[1, 2, 3])
     p.add_argument("--model", default=None)
     p.add_argument("--checkpoint", default=None, help="LoRA adapter path (phase 2/3 only; omit for phase 1 baseline)")
-    p.add_argument("--mode", default="fixed", choices=["adaptive", "fixed"])
+    p.add_argument("--mode", default="adaptive", choices=["adaptive", "fixed"])
     p.add_argument("--both-modes", action="store_true", help="Run both fixed and adaptive simulator modes")
     p.set_defaults(func=cmd_run_phase)
 

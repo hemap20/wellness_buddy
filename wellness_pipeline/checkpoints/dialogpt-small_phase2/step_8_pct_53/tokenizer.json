@@ -21,30 +21,10 @@
     "use_regex": true
   },
   "post_processor": {
-    "type": "TemplateProcessing",
-    "single": [
-      {
-        "Sequence": {
-          "id": "A",
-          "type_id": 0
-        }
-      }
-    ],
-    "pair": [
-      {
-        "Sequence": {
-          "id": "A",
-          "type_id": 0
-        }
-      },
-      {
-        "Sequence": {
-          "id": "B",
-          "type_id": 1
-        }
-      }
-    ],
-    "special_tokens": {}
+    "type": "ByteLevel",
+    "add_prefix_space": true,
+    "trim_offsets": false,
+    "use_regex": true
   },
   "decoder": {
     "type": "ByteLevel",
