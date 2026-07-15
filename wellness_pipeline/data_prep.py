@@ -2,21 +2,26 @@
 Data-prep module — standalone runnable stage.
 
 Downloads N raw samples from the configured HF dataset, normalizes whatever
-schema it has into {user, assistant} pairs, and writes two variants:
-  - phase2_pairs.jsonl: single-turn {user, assistant} pairs, no system role
-  - phase3_pairs.jsonl: same pairs, with the fixed system prompt prepended
+schema it has into {user, assistant} pairs, optionally splits into
+train/val (seeded, reproducible), and writes to
+data/n{size}/phase{2,3}/{train,val}.jsonl — val.jsonl is omitted when the
+split is skipped (num_samples below DataConfig.min_samples_for_val_split, or
+val_split_ratio=0.0 and val_samples=None, which is the default/backward-compatible
+behavior).
 
 Fails loudly (raises) on malformed data rather than silently training on it.
 
 Run standalone:
     python data_prep.py
     python data_prep.py --num-samples 5
+    python data_prep.py --num-samples 100 --val-split-ratio 0.1
 """
 import argparse
 import json
+import random
 import sys
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 from config import DataConfig, FIXED_SYSTEM_PROMPT
 
@@ -124,6 +129,57 @@ def build_pairs(raw_samples: list[dict]) -> list[tuple[str, str]]:
     return all_pairs
 
 
+def compute_val_count(n_examples: int, cfg: DataConfig) -> tuple[int, str]:
+    """Returns (val_count, reason). val_count=0 means no split — either
+    because none was requested, or because n_examples is below
+    min_samples_for_val_split (which always wins, regardless of the other
+    settings)."""
+    if n_examples < cfg.min_samples_for_val_split:
+        if cfg.val_samples or cfg.val_split_ratio > 0:
+            return 0, (
+                f"num_samples={n_examples} is below min_samples_for_val_split="
+                f"{cfg.min_samples_for_val_split} — training on full set, no validation split."
+            )
+        return 0, "val_split_ratio=0.0 and val_samples=None — no validation split requested."
+
+    if cfg.val_samples is not None:
+        n_val = cfg.val_samples
+    else:
+        n_val = round(n_examples * cfg.val_split_ratio)
+    n_val = max(0, min(n_val, n_examples - 1))  # always keep >=1 training example
+
+    if n_val == 0:
+        return 0, "val_split_ratio=0.0 and val_samples=None — no validation split requested."
+    return n_val, (
+        f"num_samples={n_examples}, val_split_ratio={cfg.val_split_ratio}, "
+        f"val_samples={cfg.val_samples} -> val_count={n_val}"
+    )
+
+
+def split_pairs(pairs: list[tuple[str, str]], cfg: DataConfig) -> tuple[list, list, str]:
+    """Splits (user, assistant) pairs into (train, val) using a seeded
+    shuffle — same seed as everything else in DataConfig, so the split is
+    reproducible across repeated runs at the same num_samples. Splitting
+    happens on the extracted pairs, before Phase 2/3 reformatting, so both
+    phases share an identical train/val assignment for apples-to-apples
+    comparison."""
+    n_val, reason = compute_val_count(len(pairs), cfg)
+    if n_val == 0:
+        return pairs, [], reason
+
+    indices = list(range(len(pairs)))
+    random.Random(cfg.seed).shuffle(indices)
+    val_idx = set(indices[:n_val])
+
+    train = [p for i, p in enumerate(pairs) if i not in val_idx]
+    val = [p for i, p in enumerate(pairs) if i in val_idx]
+
+    # cheap insurance — should be guaranteed by construction (disjoint index sets)
+    assert set(train).isdisjoint(set(val)), "train/val leakage detected after split"
+
+    return train, val, reason
+
+
 def to_phase2_record(user: str, assistant: str) -> dict:
     return {"messages": [{"role": "user", "content": user}, {"role": "assistant", "content": assistant}]}
 
@@ -168,27 +224,48 @@ def run(cfg: DataConfig = None) -> dict:
     cfg = cfg or DataConfig()
 
     raw_samples = load_raw_samples(cfg)
-    with open(cfg.raw_path, "w", encoding="utf-8") as f:
+    raw_path = cfg.raw_path()
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(raw_path, "w", encoding="utf-8") as f:
         for example in raw_samples:
             f.write(json.dumps(example, ensure_ascii=False, default=str) + "\n")
 
     pairs = build_pairs(raw_samples)
+    train_pairs, val_pairs, split_reason = split_pairs(pairs, cfg)
 
-    phase2_records = (to_phase2_record(u, a) for u, a in pairs)
-    phase3_records = (to_phase3_record(u, a, FIXED_SYSTEM_PROMPT) for u, a in pairs)
-
-    n_phase2 = write_jsonl(phase2_records, cfg.phase2_path)
-    n_phase3 = write_jsonl(phase3_records, cfg.phase3_path)
+    print(f"num_samples={cfg.num_samples}, train={len(train_pairs)}, val={len(val_pairs)}, seed={cfg.seed}")
+    print(split_reason)
 
     summary = {
         "raw_samples": len(raw_samples),
         "pairs_extracted": len(pairs),
-        "phase2_records": n_phase2,
-        "phase3_records": n_phase3,
-        "raw_path": str(cfg.raw_path),
-        "phase2_path": str(cfg.phase2_path),
-        "phase3_path": str(cfg.phase3_path),
+        "train_pairs": len(train_pairs),
+        "val_pairs": len(val_pairs),
+        "seed": cfg.seed,
+        "split_reason": split_reason,
+        "raw_path": str(raw_path),
     }
+
+    phase_formatters = {
+        2: lambda u, a: to_phase2_record(u, a),
+        3: lambda u, a: to_phase3_record(u, a, FIXED_SYSTEM_PROMPT),
+    }
+    for phase, formatter in phase_formatters.items():
+        train_path = cfg.train_path(phase)
+        train_path.parent.mkdir(parents=True, exist_ok=True)
+        n_train = write_jsonl((formatter(u, a) for u, a in train_pairs), train_path)
+        summary[f"phase{phase}_train_path"] = str(train_path)
+        summary[f"phase{phase}_train_records"] = n_train
+
+        if val_pairs:
+            val_path = cfg.val_path(phase)
+            n_val = write_jsonl((formatter(u, a) for u, a in val_pairs), val_path)
+            summary[f"phase{phase}_val_path"] = str(val_path)
+            summary[f"phase{phase}_val_records"] = n_val
+        else:
+            summary[f"phase{phase}_val_path"] = None
+            summary[f"phase{phase}_val_records"] = 0
+
     return summary
 
 
@@ -196,6 +273,8 @@ def main():
     parser = argparse.ArgumentParser(description="Data-prep stage: download + reformat + validate.")
     parser.add_argument("--num-samples", type=int, default=None)
     parser.add_argument("--dataset-id", type=str, default=None)
+    parser.add_argument("--val-split-ratio", type=float, default=None)
+    parser.add_argument("--val-samples", type=int, default=None)
     args = parser.parse_args()
 
     cfg = DataConfig()
@@ -203,6 +282,10 @@ def main():
         cfg.num_samples = args.num_samples
     if args.dataset_id is not None:
         cfg.hf_dataset_id = args.dataset_id
+    if args.val_split_ratio is not None:
+        cfg.val_split_ratio = args.val_split_ratio
+    if args.val_samples is not None:
+        cfg.val_samples = args.val_samples
 
     try:
         summary = run(cfg)

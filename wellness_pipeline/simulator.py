@@ -10,6 +10,12 @@ Two modes, toggled by SimulatorConfig.mode:
   - "adaptive": Claude decides the next user message given the persona, the
                 turn_beats as a loose script, and the transcript so far.
 
+Every conversation runs for exactly `num_turns` turns (test case's own
+"num_turns" if set, else SimulatorConfig.num_turns) — a fixed length you
+decide, not a cap the simulator can end early. There is no "natural
+conversation end" judgment call; past the scripted turn_beats, the simulator
+just keeps improvising in character for the remaining turns.
+
 Logs the full transcript + metadata to a JSON file under transcripts/.
 
 Run standalone (against the local model, phase 2, no system prompt):
@@ -34,9 +40,8 @@ _SIMULATOR_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
         "user_message": {"type": "string", "description": "The next message the simulated user sends."},
-        "end_conversation": {"type": "boolean", "description": "True if the scenario is naturally complete."},
     },
-    "required": ["user_message", "end_conversation"],
+    "required": ["user_message"],
     "additionalProperties": False,
 }
 
@@ -66,8 +71,21 @@ def _simulator_system_prompt(test_case: dict) -> str:
     )
 
 
+class SimulatorOutputError(ValueError):
+    pass
+
+
+def _extract_user_message(text: str) -> str:
+    data = json.loads(text)  # may raise json.JSONDecodeError
+    message = data.get("user_message")
+    if not isinstance(message, str) or not message.strip():
+        raise SimulatorOutputError(f"missing/empty 'user_message' field: {data!r}")
+    return message
+
+
 def _next_adaptive_user_message(client: LLMClient, sim_cfg: SimulatorConfig,
-                                 test_case: dict, transcript: list[dict], turn_idx: int) -> tuple[str, bool]:
+                                 test_case: dict, transcript: list[dict], turn_idx: int,
+                                 num_turns: int, max_retries: int = 2) -> str:
     history_text = "\n".join(f"{m['role']}: {m['content']}" for m in transcript) or "(conversation not yet started)"
     n_beats = len(test_case["turn_beats"])
     if turn_idx < n_beats:
@@ -75,23 +93,38 @@ def _next_adaptive_user_message(client: LLMClient, sim_cfg: SimulatorConfig,
             f"You are on turn beat {turn_idx + 1} of {n_beats}. Produce your next message now."
         )
     else:
-        # Scripted beats are exhausted but the scenario's max_turns allows more —
-        # keep improvising in character instead of assuming the scene is over.
+        # Scripted beats are exhausted but num_turns calls for more — keep
+        # improvising in character for the remaining turns. The conversation
+        # always runs the full num_turns; there is no early "natural end".
         beat_instruction = (
-            f"You have worked through all {n_beats} scripted turn beats. Keep improvising "
-            "naturally in character, staying consistent with the persona and everything said "
-            "so far. Only set end_conversation to true if the scene has reached a natural close "
-            "(e.g. the topic is fully resolved) — don't end just because the script ran out."
+            f"You have worked through all {n_beats} scripted turn beats, and this conversation "
+            f"continues for {num_turns} turns total (this is turn {turn_idx + 1}). Keep improvising "
+            "naturally in character, staying consistent with the persona and everything said so far."
         )
     user_prompt = f"Conversation so far:\n{history_text}\n\n{beat_instruction}"
-    text = client.generate_json(
-        system=_simulator_system_prompt(test_case),
-        user_content=user_prompt,
-        schema=_SIMULATOR_OUTPUT_SCHEMA,
-        max_tokens=1024,
-    )
-    data = json.loads(text)
-    return data["user_message"], data["end_conversation"]
+
+    # Malformed/truncated JSON from the LLM is retried with a corrective
+    # instruction rather than crashing the whole run — same pattern as
+    # judge.py's malformed-JSON handling, applied here since a single bad
+    # turn out of hundreds would otherwise abort the entire phase.
+    prompt = user_prompt
+    last_error = None
+    for attempt in range(max_retries + 1):
+        text = client.generate_json(
+            system=_simulator_system_prompt(test_case),
+            user_content=prompt,
+            schema=_SIMULATOR_OUTPUT_SCHEMA,
+            max_tokens=1024,
+        )
+        try:
+            return _extract_user_message(text)
+        except (json.JSONDecodeError, SimulatorOutputError) as exc:
+            last_error = exc
+            prompt = (
+                f"{user_prompt}\n\n(Your previous response was not valid JSON matching the schema — {exc}. "
+                'Respond again with ONLY a strict JSON object of the form {"user_message": "..."}, no other text.)'
+            )
+    raise SimulatorOutputError(f"simulator failed to produce valid JSON after {max_retries} retries: {last_error}")
 
 
 def run_conversation(
@@ -112,24 +145,20 @@ def run_conversation(
         bot_messages.append({"role": "system", "content": system_prompt})
 
     transcript: list[dict] = []
-    # A test case's own "max_turns" (if present) overrides the global
-    # SimulatorConfig.max_turns default — that's what lets individual
-    # scenarios run longer than the generic 8-turn cap.
-    configured_max_turns = test_case.get("max_turns", sim_cfg.max_turns)
-    max_turns = (
-        min(configured_max_turns, len(test_case["turn_beats"]))
-        if sim_cfg.mode == "fixed"
-        else configured_max_turns
-    )
+    # A test case's own "num_turns" (if present) overrides the global
+    # SimulatorConfig.num_turns default. This is a fixed length, not a cap —
+    # every conversation runs exactly this many turns, no early "natural end".
+    num_turns = test_case.get("num_turns", sim_cfg.num_turns)
+    if sim_cfg.mode == "fixed":
+        # Can't fabricate verbatim text past the written script — fixed mode
+        # is capped at however many turn_beats actually exist.
+        num_turns = min(num_turns, len(test_case["turn_beats"]))
 
-    for turn_idx in range(max_turns):
+    for turn_idx in range(num_turns):
         if sim_cfg.mode == "fixed":
-            if turn_idx >= len(test_case["turn_beats"]):
-                break
             user_text = test_case["turn_beats"][turn_idx]
-            end_conversation = False
         else:
-            user_text, end_conversation = _next_adaptive_user_message(client, sim_cfg, test_case, transcript, turn_idx)
+            user_text = _next_adaptive_user_message(client, sim_cfg, test_case, transcript, turn_idx, num_turns)
 
         transcript.append({"role": "user", "content": user_text})
         bot_messages.append({"role": "user", "content": user_text})
@@ -137,9 +166,6 @@ def run_conversation(
         assistant_text, latency = generate_fn(bot_messages)
         transcript.append({"role": "assistant", "content": assistant_text, "latency_seconds": latency})
         bot_messages.append({"role": "assistant", "content": assistant_text})
-
-        if end_conversation:
-            break
 
     result = {
         "metadata": {

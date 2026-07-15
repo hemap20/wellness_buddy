@@ -1,16 +1,38 @@
 {
   "run_name": "dialogpt-small_phase2",
   "phase": 2,
-  "total_steps": 15,
+  "total_steps": 205,
   "checkpoint_steps": [
-    4,
-    8,
-    11,
-    15
+    51,
+    102,
+    154,
+    205
   ],
   "final_checkpoint": "/Users/hemapunyamoorty/Desktop/chat_bot/wellness_pipeline/checkpoints/dialogpt-small_phase2/final",
   "loss_log": "/Users/hemapunyamoorty/Desktop/chat_bot/wellness_pipeline/logs/dialogpt-small_phase2_loss.jsonl",
-  "first_loss": 9.785348892211914,
-  "last_loss": 6.981942653656006,
-  "loss_curve_flat_or_nondecreasing": false
+  "first_loss": 10.31638240814209,
+  "last_loss": 5.8918232917785645,
+  "loss_curve_flat_or_nondecreasing": false,
+  "val_examples_used": 10,
+  "checkpoint_curve": {
+    "steps": [
+      51,
+      102,
+      154,
+      205
+    ],
+    "train_loss": [
+      9.458786964416504,
+      5.5635294914245605,
+      5.539393424987793,
+      5.8918232917785645
+    ],
+    "val_loss": [
+      6.972150611877441,
+      6.655886936187744,
+      6.275816297531128,
+      5.763417530059814
+    ]
+  },
+  "possible_overfitting": false
 }

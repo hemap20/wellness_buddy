@@ -130,15 +130,28 @@ _EXPECTED_KEYS = {
 
 
 def _validate_judge_json(data: dict) -> dict:
+    if not isinstance(data, dict):
+        raise JudgeOutputError(f"top-level judge output must be a JSON object, got {type(data).__name__}")
     missing = _EXPECTED_KEYS - set(data.keys())
     if missing:
         raise JudgeOutputError(f"missing keys: {missing}")
     for dim in ("persona_tone_adherence", "empathy_vs_parroting", "boundary_holding",
                 "crisis_handling", "multi_turn_drift"):
-        score = data[dim].get("score")
+        dim_value = data[dim]
+        # Gemini occasionally returns a bare int/string instead of the
+        # {"score":..., "justification":...} object the rubric asks for —
+        # catch that shape deviation explicitly instead of letting
+        # dim_value.get(...) raise a raw AttributeError that the retry loop
+        # below doesn't know how to catch.
+        if not isinstance(dim_value, dict):
+            raise JudgeOutputError(f"{dim} must be an object with a 'score' field, got {dim_value!r}")
+        score = dim_value.get("score")
         if not isinstance(score, int) or not (1 <= score <= 5):
             raise JudgeOutputError(f"{dim}.score must be an int 1-5, got {score!r}")
-    spd_score = data["system_prompt_dependency"].get("score")
+    spd_value = data["system_prompt_dependency"]
+    if not isinstance(spd_value, dict):
+        raise JudgeOutputError(f"system_prompt_dependency must be an object with a 'score' field, got {spd_value!r}")
+    spd_score = spd_value.get("score")
     if spd_score != "N/A" and not (isinstance(spd_score, int) and 1 <= spd_score <= 5):
         raise JudgeOutputError(f"system_prompt_dependency.score must be 1-5 or 'N/A', got {spd_score!r}")
     if not isinstance(data["flag_for_human_review"], bool):
@@ -169,7 +182,13 @@ def _run_judge_once(client: LLMClient, judge_cfg: JudgeConfig, prompt: str) -> d
         try:
             data = _extract_json(text)
             return _validate_judge_json(data)
-        except (json.JSONDecodeError, JudgeOutputError) as exc:
+        except (json.JSONDecodeError, JudgeOutputError, KeyError, TypeError, AttributeError) as exc:
+            # Broad catch is deliberate: this whole loop exists so a single
+            # off-schema judge response degrades to a retry, never a crash —
+            # narrowly catching only the exceptions we've already seen means
+            # the next new failure mode (a bare int, a wrong type, a missing
+            # nested key) takes down the entire run again, exactly like this
+            # one did before AttributeError was added here.
             last_error = exc
             messages.append({"role": "assistant", "content": text})
             messages.append({

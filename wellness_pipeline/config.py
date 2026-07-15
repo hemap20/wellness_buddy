@@ -28,11 +28,35 @@ for d in (DATA_DIR, CHECKPOINT_DIR, TRANSCRIPT_DIR, SCORE_DIR, REPORT_DIR, LOG_D
 class DataConfig:
     hf_dataset_id: str = "filippo19741974/Generated-Recovery-Support-Dialogues"
     hf_split: str = "train"
-    num_samples: int = 5  # validation-scale run; bump for real experiments
-    raw_path: Path = DATA_DIR / "raw_samples.jsonl"
-    phase2_path: Path = DATA_DIR / "phase2_pairs.jsonl"
-    phase3_path: Path = DATA_DIR / "phase3_pairs.jsonl"
+    num_samples: int = 5
     seed: int = 42
+
+    # Validation split — held out from training, tracked as val_loss alongside
+    # train_loss during train.py's run. 0.0 / None = current no-split behavior.
+    val_split_ratio: float = 0.2
+    val_samples: Optional[int] = None  # exact count; overrides val_split_ratio if set
+    min_samples_for_val_split: int = 20  # below this, always skip the split
+
+    # Paths are computed, not fixed fields, so they stay namespaced by
+    # num_samples (data/n{size}/...) the same way results/ is namespaced by
+    # dataset size — reuses results_manager's zero-padding so "n050" style
+    # naming is consistent everywhere in the pipeline.
+    def _size_dir(self) -> Path:
+        from results_manager import format_dataset_size
+
+        return DATA_DIR / format_dataset_size(self.num_samples)
+
+    def raw_path(self) -> Path:
+        return self._size_dir() / "raw_samples.jsonl"
+
+    def phase_dir(self, phase: int) -> Path:
+        return self._size_dir() / f"phase{phase}"
+
+    def train_path(self, phase: int) -> Path:
+        return self.phase_dir(phase) / "train.jsonl"
+
+    def val_path(self, phase: int) -> Path:
+        return self.phase_dir(phase) / "val.jsonl"
 
 
 # ---------------------------------------------------------------------------
@@ -63,14 +87,93 @@ class ModelUnderTest:
     trust_remote_code: bool = False
     max_new_tokens: int = 128
     device: str = "mps"  # "auto" | "cpu" | "cuda" | "mps"
+    # LoRA target_modules names the actual attention projection layers to
+    # adapt — this is architecture, not a tunable hyperparameter, so it lives
+    # per-model rather than in the shared TrainingConfig below (every other
+    # LoRA/training setting stays identical across models for a fair
+    # comparison; this one just has to match what the model actually has).
+    lora_target_modules: tuple = ("c_attn",)  # GPT-2 family (DialoGPT is GPT-2 arch)
+    # None = load in the model's native dtype (fine for small models like
+    # DialoGPT-small). Set to "bfloat16"/"float16" for larger models to keep
+    # memory reasonable on CPU/MPS.
+    torch_dtype: Optional[str] = None
+    # Set True if the HF repo requires accepting a license + `huggingface-cli
+    # login` / HF_TOKEN before the tokenizer/weights can be downloaded.
+    gated: bool = False
+    # True if the tokenizer's chat template accepts an `enable_thinking`
+    # toggle (Qwen3/Gemma-4-style). When True, every simulate/score run for
+    # this model runs twice — once per thinking mode — see orchestrator.py.
+    supports_thinking: bool = False
+    # Separate, larger token budget used only when thinking=True — a
+    # reasoning trace plus a final answer needs much more room than a plain
+    # reply. None = just use max_new_tokens for thinking too (fine for models
+    # without supports_thinking). Discovered necessary the hard way: at the
+    # shared max_new_tokens=128, gemma-4-e2b-it ran out of budget mid-thought
+    # and never reached a final answer at all.
+    thinking_max_new_tokens: Optional[int] = None
 
 
-MODELS_UNDER_TEST = [ModelUnderTest()]
+MODELS_UNDER_TEST = [
+    ModelUnderTest(),
+    ModelUnderTest(
+        name="gemma-3-1b-it",
+        hf_model_id="google/gemma-3-1b-it",
+        max_new_tokens=128,
+        device="mps",
+        # Gemma 3 uses the standard Llama-style attention projection names —
+        # verified against the public transformers Gemma3Attention source,
+        # NOT loaded/confirmed live here (the repo is gated — see `gated`
+        # below — so this couldn't be checked against the actual config.json
+        # in this environment). If loading fails with a LoRA target-module
+        # mismatch, inspect the real module names via
+        # `for n, _ in model.named_modules(): print(n)` and update this.
+        # CAUTION (found the hard way on gemma-4-e2b-it below): if this repo
+        # turns out to be multimodal too, bare names collide with vision/audio
+        # submodules of the same name and PEFT crashes — you'd need a regex
+        # scoped to the text-decoder's module path instead, same fix as below.
+        lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
+        torch_dtype="bfloat16",  # ~1B params in fp32 is wasteful on CPU/MPS
+        gated=True,
+    ),
+    ModelUnderTest(
+        name="gemma-4-e2b-it",
+        hf_model_id="google/gemma-4-E2B-it",
+        max_new_tokens=128,
+        device="mps",
+        # NOTE: bare names ("q_proj", "k_proj", "v_proj", "o_proj") are NOT
+        # enough here — PEFT matches target_modules by name across the
+        # ENTIRE model, and Gemma4ForConditionalGeneration is multimodal: its
+        # vision encoder (Gemma4VisionAttention) also has submodules named
+        # q_proj/k_proj/v_proj, but wrapped in Gemma4ClippableLinear (not
+        # nn.Linear) — PEFT crashes trying to inject LoRA there. Confirmed by
+        # actually hitting this crash, then inspecting named_modules(): the
+        # text decoder's attention (Gemma4TextAttention, plain nn.Linear)
+        # lives under "model.language_model.layers.N.self_attn.*", so a
+        # regex scoped to that path is required. A plain tuple/list of exact
+        # names is treated by PEFT as a suffix match with no path scoping;
+        # passing a single string instead makes PEFT treat it as a full regex.
+        lora_target_modules=r".*language_model.*\.(q_proj|k_proj|v_proj|o_proj)$",
+        torch_dtype="bfloat16",
+        gated=False,  # loaded successfully unauthenticated when this was added
+        # 128 tokens is nowhere near enough room for a full reasoning trace —
+        # observed directly: at max_new_tokens=128 the model ran out of
+        # budget mid-thought and never reached the closing marker or a final
+        # answer. 768 gives real headroom for thinking + answer.
+        thinking_max_new_tokens=768,
+        # Confirmed via the tokenizer's chat_template: it checks an
+        # `enable_thinking` Jinja variable and, when true, injects a
+        # "<|think|>" marker; generated output then contains a thinking
+        # segment delimited by "<|channel>" ... "<channel|>" before the
+        # final answer (see ModelRunner._strip_thinking_channel in inference.py).
+        supports_thinking=True,
+    ),
+]
 
 
 # ---------------------------------------------------------------------------
 # Shared training config — identical across phases and models so behavioral
-# differences are attributable to data/method, not the recipe.
+# differences are attributable to data/method, not the recipe. (LoRA
+# target_modules is the one exception — see ModelUnderTest.lora_target_modules.)
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -78,9 +181,8 @@ class TrainingConfig:
     lora_r: int = 8
     lora_alpha: int = 16
     lora_dropout: float = 0.05
-    lora_target_modules: tuple = ("c_attn",)  # GPT-2 family (DialoGPT is GPT-2 arch)
     learning_rate: float = 1e-4
-    num_train_epochs: int = 3
+    num_train_epochs: int = 5
     per_device_train_batch_size: int = 1
     gradient_accumulation_steps: int = 1
     max_seq_length: int = 256
@@ -100,7 +202,7 @@ SHARED_TRAINING_CONFIG = TrainingConfig()
 class SimulatorConfig:
     provider: str = "gemini"  # "gemini" | "anthropic"
     model: str = "gemini-3.5-flash"
-    max_turns: int = 8
+    num_turns: int = 20  # fixed conversation length, not a cap — see simulator.py
     mode: str = "adaptive"  # "adaptive" | "fixed"
 
 

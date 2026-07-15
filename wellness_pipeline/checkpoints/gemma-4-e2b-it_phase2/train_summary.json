@@ -1,0 +1,38 @@
+{
+  "run_name": "gemma-4-e2b-it_phase2",
+  "phase": 2,
+  "total_steps": 205,
+  "checkpoint_steps": [
+    51,
+    102,
+    154,
+    205
+  ],
+  "final_checkpoint": "/Users/hemapunyamoorty/Desktop/chat_bot/wellness_pipeline/checkpoints/gemma-4-e2b-it_phase2/final",
+  "loss_log": "/Users/hemapunyamoorty/Desktop/chat_bot/wellness_pipeline/logs/gemma-4-e2b-it_phase2_loss.jsonl",
+  "first_loss": 4.58572244644165,
+  "last_loss": 0.8973143696784973,
+  "loss_curve_flat_or_nondecreasing": false,
+  "val_examples_used": 10,
+  "checkpoint_curve": {
+    "steps": [
+      51,
+      102,
+      154,
+      205
+    ],
+    "train_loss": [
+      1.6078190803527832,
+      1.3707090616226196,
+      0.9444895386695862,
+      0.8973143696784973
+    ],
+    "val_loss": [
+      2.28106449842453,
+      2.0079015731811523,
+      2.03271005153656,
+      2.4175000548362733
+    ]
+  },
+  "possible_overfitting": true
+}
