@@ -111,6 +111,11 @@ class ModelUnderTest:
     # shared max_new_tokens=128, gemma-4-e2b-it ran out of budget mid-thought
     # and never reached a final answer at all.
     thinking_max_new_tokens: Optional[int] = None
+    # (open_marker, close_marker) delimiting the thinking segment in raw
+    # generated text — architecture-specific, only meaningful when
+    # supports_thinking=True. Default is gemma-4-e2b-it's own markers;
+    # Qwen3-family models use "<think>"/"</think>" instead (see below).
+    thinking_markers: tuple = ("<|channel>", "<channel|>")
 
 
 MODELS_UNDER_TEST = [
@@ -194,6 +199,32 @@ MODELS_UNDER_TEST = [
         lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
         torch_dtype="bfloat16",
         gated=False,
+        # Verified live via AutoTokenizer.apply_chat_template: enable_thinking=False
+        # injects an empty "<think>\n\n</think>\n\n" block right after the
+        # generation prompt; enable_thinking=True leaves it open for the model
+        # to emit its own "<think>...reasoning...</think>answer" — same
+        # open/close-marker shape as gemma-4-e2b-it, different literal tokens.
+        supports_thinking=True,
+        thinking_markers=("<think>", "</think>"),
+        # Same rationale as gemma-4-e2b-it: a full reasoning trace + answer
+        # needs much more headroom than a plain reply.
+        thinking_max_new_tokens=768,
+    ),
+    ModelUnderTest(
+        name="qwen3-8b",
+        hf_model_id="Qwen/Qwen3-8B",
+        max_new_tokens=128,
+        device="mps",
+        # Base (non-fine-tuned) counterpart to empathetic-qwen3-8b-jan above —
+        # same architecture, verified live via AutoConfig (model_type="qwen3")
+        # and AutoTokenizer.apply_chat_template (enable_thinking differs the
+        # same way), so identical LoRA/thinking config applies.
+        lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
+        torch_dtype="bfloat16",
+        gated=False,
+        supports_thinking=True,
+        thinking_markers=("<think>", "</think>"),
+        thinking_max_new_tokens=768,
     ),
     ModelUnderTest(
         name="mistral-7b-instruct-v0.3",

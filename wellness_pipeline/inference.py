@@ -27,30 +27,34 @@ class ThinkingTruncatedError(RuntimeError):
     real response, rather than silently leaking the raw reasoning trace."""
 
 
-def _strip_thinking_channel(text: str, tokenizer) -> str:
-    """Mirrors the Gemma-4-style chat template's own strip_thinking() Jinja
-    macro: the template opens a thinking segment with "<|channel>" and
-    closes it with "<channel|>" (e.g. "<|channel>thought\\n...\\n<channel|>answer").
-    This removes that segment, keeping only the final visible answer — same
-    as what thinking=off output would show.
+def _strip_thinking_channel(text: str, tokenizer, open_marker: str, close_marker: str) -> str:
+    """Generic thinking-segment stripper, parameterized by each model's own
+    open/close markers (see ModelUnderTest.thinking_markers) — different
+    architectures delimit their reasoning trace differently:
+      - gemma-4-e2b-it: "<|channel>thought\\n...\\n<channel|>answer"
+      - Qwen3-family (e.g. empathetic-qwen3-8b-jan): "<think>...</think>answer"
+    Both follow the same open-marker...close-marker...visible-answer shape,
+    so one generic split-based implementation covers both — this removes
+    the segment, keeping only the final visible answer, same as what
+    thinking=off output would show.
 
     Raises ThinkingTruncatedError if a thinking segment was opened but never
     closed (generation ran out of budget mid-thought) — there is no final
     answer in that case, so returning the raw text as if it were one would
     silently feed the judge/report a chain-of-thought dump instead of a
     real response."""
-    if "<|channel>" in text and "<channel|>" not in text:
+    if open_marker in text and close_marker not in text:
         raise ThinkingTruncatedError(
-            "generation ran out of max_new_tokens while still inside the thinking segment "
-            "(opened with <|channel> but never closed) — no final answer was produced. "
-            "Raise ModelUnderTest.thinking_max_new_tokens for this model."
+            f"generation ran out of max_new_tokens while still inside the thinking segment "
+            f"(opened with {open_marker!r} but never closed) — no final answer was produced. "
+            f"Raise ModelUnderTest.thinking_max_new_tokens for this model."
         )
-    if "<channel|>" in text:
-        parts = text.split("<channel|>")
+    if close_marker in text:
+        parts = text.split(close_marker)
         kept = []
         for part in parts:
-            if "<|channel>" in part:
-                kept.append(part.split("<|channel>", 1)[0])
+            if open_marker in part:
+                kept.append(part.split(open_marker, 1)[0])
             else:
                 kept.append(part)
         text = "".join(kept)
@@ -137,8 +141,9 @@ class ModelRunner:
             # into the visible answer. Decode raw first, strip by marker,
             # then clean up any other special-token strings that survived.
             raw_text = self.tokenizer.decode(new_tokens, skip_special_tokens=False)
+            open_marker, close_marker = self.model_cfg.thinking_markers
             try:
-                text = _strip_thinking_channel(raw_text, self.tokenizer)
+                text = _strip_thinking_channel(raw_text, self.tokenizer, open_marker, close_marker)
             except ThinkingTruncatedError:
                 # Don't crash the whole simulate/score batch over one turn
                 # that ran out of budget mid-thought — surface it as a

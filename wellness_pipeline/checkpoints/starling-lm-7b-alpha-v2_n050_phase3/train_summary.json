@@ -1,0 +1,39 @@
+{
+  "run_name": "starling-lm-7b-alpha-v2_n050_phase3",
+  "phase": 3,
+  "total_steps": 123,
+  "checkpoint_steps": [
+    31,
+    62,
+    92,
+    123
+  ],
+  "final_checkpoint": "/Users/hemapunyamoorty/Desktop/chat_bot/wellness_pipeline/checkpoints/starling-lm-7b-alpha-v2_n050_phase3/final",
+  "loss_log": "/Users/hemapunyamoorty/Desktop/chat_bot/wellness_pipeline/logs/starling-lm-7b-alpha-v2_n050_phase3_loss.jsonl",
+  "first_loss": 2.5056023597717285,
+  "last_loss": 0.6910080909729004,
+  "loss_curve_flat_or_nondecreasing": false,
+  "val_examples_used": 10,
+  "checkpoint_curve": {
+    "steps": [
+      31,
+      62,
+      92,
+      123
+    ],
+    "train_loss": [
+      1.6133947372436523,
+      0.8351040482521057,
+      0.6910080909729004
+    ],
+    "val_loss": [
+      1.82083740234375,
+      1.7285681247711182,
+      1.984084951877594
+    ]
+  },
+  "possible_overfitting": true,
+  "early_stopped": true,
+  "early_stopped_at_step": 92,
+  "best_val_loss": 1.7285681247711182
+}
