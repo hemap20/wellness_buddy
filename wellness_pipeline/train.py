@@ -24,7 +24,9 @@ Inspect output:
     ls checkpoints/dialogpt-small_phase2/
 """
 import argparse
+import dataclasses
 import json
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -38,6 +40,7 @@ from config import (
     TrainingConfig,
 )
 from model_utils import build_training_text, load_tokenizer_and_model, resolve_device
+from results_manager import format_dataset_size
 
 
 def _load_jsonl(path: Path) -> list[dict]:
@@ -121,7 +124,7 @@ def check_overfitting(checkpoint_train_loss: list[float], checkpoint_val_loss: l
 
 
 def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig = None,
-        data_cfg: DataConfig = None) -> dict:
+        data_cfg: DataConfig = None, force: bool = False) -> dict:
     import torch
     from peft import LoraConfig, get_peft_model
 
@@ -130,6 +133,19 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
     data_cfg = data_cfg or DataConfig()
 
     assert phase in (2, 3), "phase must be 2 or 3"
+
+    # Resume support: if this exact (model, dataset_size, phase) run already
+    # finished (a train_summary.json exists at its final checkpoint), reuse
+    # it instead of re-downloading/re-training from scratch — this is what
+    # lets `orchestrator.py run-full` be stopped and safely re-run later,
+    # picking up at the next incomplete step rather than starting over.
+    run_name = f"{model_cfg.name}_{format_dataset_size(data_cfg.num_samples)}_phase{phase}"
+    existing_summary_path = CHECKPOINT_DIR / run_name / "train_summary.json"
+    if existing_summary_path.exists() and not force:
+        with open(existing_summary_path, encoding="utf-8") as f:
+            print(f"[train] {run_name} already trained — reusing existing checkpoint (pass force=True to redo).")
+            return json.load(f)
+
     records, val_records = load_phase_data(phase, data_cfg)
 
     device = resolve_device(model_cfg.device)
@@ -160,12 +176,27 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
     total_steps = len(examples) * train_cfg.num_train_epochs
     checkpoint_steps = sorted({max(1, round(total_steps * f)) for f in train_cfg.checkpoint_fractions})
 
-    run_name = f"{model_cfg.name}_phase{phase}"
+    # run_name already computed above (namespaced by dataset size — same
+    # "n050"/"n500" convention as data/ and results/ — so re-training the
+    # same model/phase at a different sample count never overwrites a
+    # previous run's checkpoints or loss log).
     ckpt_root = CHECKPOINT_DIR / run_name
     ckpt_root.mkdir(parents=True, exist_ok=True)
     loss_log_path = LOG_DIR / f"{run_name}_loss.jsonl"
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=train_cfg.learning_rate)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=train_cfg.learning_rate, weight_decay=train_cfg.weight_decay
+    )
+
+    # Early stopping only engages when a val split exists — it stops training
+    # at the first checkpoint where val_loss regresses above the best value
+    # seen so far, then uses that best checkpoint (not the current, worse
+    # weights) as "final". No patience window: one regression is enough.
+    has_val = bool(val_examples)
+    best_val_loss = float("inf")
+    best_ckpt_path = None
+    early_stopped = False
+    early_stopped_at_step = None
 
     step = 0
     loss_history = []
@@ -173,6 +204,8 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
     checkpoint_val_loss = []  # entries stay None per-checkpoint if val_examples is empty
     with open(loss_log_path, "w", encoding="utf-8") as loss_log:
         for epoch in range(train_cfg.num_train_epochs):
+            if early_stopped:
+                break
             for example_idx, (input_ids, labels) in enumerate(examples):
                 step += 1
                 input_ids_b = input_ids.unsqueeze(0).to(device)
@@ -208,12 +241,25 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
                     val_loss_here = evaluate_avg_loss(model, val_examples, device) if val_examples else None
                     checkpoint_val_loss.append(val_loss_here)
 
+                    if has_val:
+                        if val_loss_here < best_val_loss:
+                            best_val_loss = val_loss_here
+                            best_ckpt_path = ckpt_path
+                        else:
+                            early_stopped = True
+                            early_stopped_at_step = step
+                            break
+
     final_path = ckpt_root / "final"
-    model.save_pretrained(final_path)
-    tokenizer.save_pretrained(final_path)
+    if early_stopped and best_ckpt_path is not None:
+        if final_path.exists():
+            shutil.rmtree(final_path)
+        shutil.copytree(best_ckpt_path, final_path)
+    else:
+        model.save_pretrained(final_path)
+        tokenizer.save_pretrained(final_path)
 
     flat = _flat_or_nondecreasing(loss_history)
-    has_val = bool(val_examples)
     overfitting = check_overfitting(checkpoint_train_loss, checkpoint_val_loss) if has_val else False
 
     summary = {
@@ -236,6 +282,9 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
             "val_loss": checkpoint_val_loss if has_val else None,
         },
         "possible_overfitting": overfitting,
+        "early_stopped": early_stopped,
+        "early_stopped_at_step": early_stopped_at_step,
+        "best_val_loss": best_val_loss if has_val and best_ckpt_path is not None else None,
     }
     summary_path = ckpt_root / "train_summary.json"
     with open(summary_path, "w", encoding="utf-8") as f:
@@ -257,6 +306,14 @@ def main():
                          help="Must match the --num-samples you passed to data_prep.py — "
                               "it's what selects data/n{size}/phase{N}/train.jsonl. "
                               "Defaults to DataConfig.num_samples in config.py if omitted.")
+    parser.add_argument("--tag", type=str, default=None,
+                         help="Appends '-{tag}' to the model name for checkpoint/results naming "
+                              "only (e.g. --tag v2 -> checkpoints/{model}-v2_n{size}_phase{N}/), "
+                              "so a re-tuned retrain never overwrites the original run.")
+    parser.add_argument("--force", action="store_true",
+                         help="Redo training even if a completed checkpoint for this exact "
+                              "(model, dataset_size, phase) already exists. Omit this to make "
+                              "re-running the same command resume-safe (already-done runs are skipped).")
     args = parser.parse_args()
 
     model_cfg = MODELS_UNDER_TEST[0]
@@ -265,10 +322,12 @@ def main():
         if not matches:
             raise SystemExit(f"Unknown model name: {args.model}")
         model_cfg = matches[0]
+    if args.tag:
+        model_cfg = dataclasses.replace(model_cfg, name=f"{model_cfg.name}-{args.tag}")
 
     data_cfg = DataConfig(num_samples=args.num_samples) if args.num_samples is not None else None
 
-    summary = run(args.phase, model_cfg=model_cfg, data_cfg=data_cfg)
+    summary = run(args.phase, model_cfg=model_cfg, data_cfg=data_cfg, force=args.force)
     print(json.dumps(summary, indent=2))
     if summary["loss_curve_flat_or_nondecreasing"]:
         print("WARNING: loss curve is flat or non-decreasing — possible training issue.")

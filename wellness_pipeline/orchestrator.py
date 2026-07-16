@@ -26,7 +26,9 @@ Examples:
     python orchestrator.py manifest   # print results/manifest.jsonl as a table
 """
 import argparse
+import dataclasses
 import json
+import time
 from pathlib import Path
 
 from config import (
@@ -54,9 +56,9 @@ def cmd_data_prep(args):
 def cmd_train(args):
     import train
 
-    model_cfg = _resolve_model(args.model)
+    model_cfg = _resolve_model(args.model, tag=args.tag)
     data_cfg = DataConfig(num_samples=args.num_samples) if args.num_samples is not None else None
-    print(json.dumps(train.run(args.phase, model_cfg=model_cfg, data_cfg=data_cfg), indent=2))
+    print(json.dumps(train.run(args.phase, model_cfg=model_cfg, data_cfg=data_cfg, force=args.force), indent=2))
 
 
 def cmd_inference(args):
@@ -113,11 +115,29 @@ def _resolve_dataset_size(args) -> int:
     return DataConfig().num_samples
 
 
+def _append_timing(model_name: str, dataset_size: int, step_name: str, duration_seconds: float, status: str) -> None:
+    """Appended-only log of how long each run-all step took, per model/dataset
+    size — a near-zero duration on a skipped (already-done) step is expected
+    and informative on its own, not a bug. Kept separate from manifest.jsonl
+    (which is about completed test results, not step wall-clock time)."""
+    path = rm.DEFAULT_RESULTS_ROOT / "timings.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "model": model_name, "dataset_size": dataset_size, "step": step_name,
+        "duration_seconds": round(duration_seconds, 2), "status": status,
+        "timestamp": rm._now_iso(),
+    }
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
 def _write_training_meta(model_name: str, dataset_size: int, phase: int) -> None:
     """Copies the already-written train_summary.json / loss log into this
     run's results/ folder as loss_curve.json + checkpoints_meta.json (step
     numbers + paths, not the weights themselves)."""
-    run_name = f"{model_name}_phase{phase}"
+    # Must match train.py's naming exactly (namespaced by dataset size so
+    # different sample counts never collide on the same checkpoint dir).
+    run_name = f"{model_name}_{rm.format_dataset_size(dataset_size)}_phase{phase}"
     summary_path = CHECKPOINT_DIR / run_name / "train_summary.json"
     loss_log_path = LOG_DIR / f"{run_name}_loss.jsonl"
     if not summary_path.exists():
@@ -166,7 +186,7 @@ def cmd_run_phase(args):
     import judge
     from inference import ModelRunner
 
-    model_cfg = _resolve_model(args.model)
+    model_cfg = _resolve_model(args.model, tag=args.tag)
     phase_key = f"phase{args.phase}"
     conditions = INFERENCE_CONDITIONS[phase_key]
     test_case_ids = simulator.list_test_cases()
@@ -180,10 +200,16 @@ def cmd_run_phase(args):
         dataset_size = None
     else:
         dataset_size = _resolve_dataset_size(args)
-        try:
-            rm.require_no_existing_run(model_cfg.name, dataset_size, args.phase, force=args.force)
-        except rm.ExistingRunError as exc:
-            raise SystemExit(str(exc))
+        # Skip (don't crash) if this exact (model, dataset_size, phase) already
+        # has results — same "already done" semantics as the phase-1 baseline
+        # check above. This is what makes `run-full`/`run-batch`/`run-all`
+        # resume-safe: stopping mid-run and re-running the same command later
+        # skips every already-completed phase instead of erroring out.
+        existing = rm.check_existing_run(model_cfg.name, dataset_size, args.phase)
+        if existing["has_content"] and not args.force:
+            print(f"Results for {model_cfg.name} n{dataset_size} phase{args.phase} already exist "
+                  f"at {existing['path']}, skipping. Pass --force to regenerate.")
+            return
         _write_training_meta(model_cfg.name, dataset_size, args.phase)
 
     runner = ModelRunner(model_cfg, adapter_path=args.checkpoint)
@@ -303,6 +329,144 @@ def cmd_run_phase(args):
     print(json.dumps(report.run(), indent=2))
 
 
+def cmd_run_all(args):
+    """Single-command full pipeline for one model: phase1 baseline -> train
+    phase2 -> test phase2 -> train phase3 -> test phase3. Meant to be launched
+    once (e.g. in the background) and left running unattended — each step is
+    isolated in its own try/except so one failure doesn't abort the rest, and
+    a clear pass/fail summary prints at the end."""
+    import train
+
+    model_cfg = _resolve_model(args.model, tag=args.tag)
+    dataset_size = args.num_samples if args.num_samples is not None else DataConfig().num_samples
+
+    def make_run_phase_args(phase, checkpoint=None):
+        # Pass the base (untagged) model name + tag separately, not
+        # model_cfg.name — cmd_run_phase's own _resolve_model looks up the
+        # name in MODELS_UNDER_TEST and would fail to find "model-v2".
+        return argparse.Namespace(
+            phase=phase, model=args.model, checkpoint=checkpoint, mode=args.mode,
+            both_modes=args.both_modes, dataset_size=None if phase == 1 else dataset_size,
+            force=args.force, tag=args.tag,
+        )
+
+    steps_ok = {}
+
+    def run_step(step_name, fn):
+        print(f"[run-all] starting {step_name}")
+        start = time.time()
+        try:
+            fn()
+            steps_ok[step_name] = True
+            status = "ok"
+        except Exception as exc:
+            steps_ok[step_name] = False
+            status = f"FAILED: {type(exc).__name__}: {exc}"
+        duration = time.time() - start
+        _append_timing(model_cfg.name, dataset_size, step_name, duration, status)
+        if steps_ok[step_name]:
+            print(f"[run-all] finished {step_name} ({duration:.1f}s)")
+        else:
+            print(f"[run-all] {status} ({step_name}, {duration:.1f}s)")
+
+    run_step("phase1_baseline", lambda: cmd_run_phase(make_run_phase_args(1)))
+
+    ckpt2 = None
+    def _train_phase2():
+        nonlocal ckpt2
+        summary = train.run(2, model_cfg=model_cfg, data_cfg=DataConfig(num_samples=dataset_size), force=args.force)
+        ckpt2 = summary["final_checkpoint"]
+    run_step("train_phase2", _train_phase2)
+
+    if ckpt2:
+        run_step("test_phase2", lambda: cmd_run_phase(make_run_phase_args(2, checkpoint=ckpt2)))
+    else:
+        steps_ok["test_phase2"] = False
+        print("[run-all] SKIPPED test_phase2 (no checkpoint — train_phase2 failed)")
+
+    ckpt3 = None
+    def _train_phase3():
+        nonlocal ckpt3
+        summary = train.run(3, model_cfg=model_cfg, data_cfg=DataConfig(num_samples=dataset_size), force=args.force)
+        ckpt3 = summary["final_checkpoint"]
+    run_step("train_phase3", _train_phase3)
+
+    if ckpt3:
+        run_step("test_phase3", lambda: cmd_run_phase(make_run_phase_args(3, checkpoint=ckpt3)))
+    else:
+        steps_ok["test_phase3"] = False
+        print("[run-all] SKIPPED test_phase3 (no checkpoint — train_phase3 failed)")
+
+    print(f"\n[run-all] summary for model={model_cfg.name}, dataset_size={dataset_size}:")
+    for step_name, ok in steps_ok.items():
+        print(f"  {'OK  ' if ok else 'FAIL'}  {step_name}")
+    if not all(steps_ok.values()):
+        raise SystemExit(1)
+
+
+def cmd_run_batch(args):
+    """Convenience: runs cmd_run_all sequentially for a list of models, one
+    after another (never in parallel — everything shares one GPU/unified
+    memory pool). One bad model must not abort the rest, so each model's
+    run-all failure is caught and logged; the batch always finishes."""
+    model_names = [m.strip() for m in args.models.split(",") if m.strip()]
+    if not model_names:
+        raise SystemExit("--models must be a non-empty comma-separated list")
+
+    batch_results = {}
+    for model_name in model_names:
+        print(f"\n[run-batch] ===== starting model={model_name} =====")
+        sub_args = argparse.Namespace(
+            model=model_name, num_samples=args.num_samples, tag=args.tag,
+            mode=args.mode, both_modes=args.both_modes, force=args.force,
+        )
+        try:
+            cmd_run_all(sub_args)
+            batch_results[model_name] = "OK"
+        except SystemExit as exc:
+            # cmd_run_all raises SystemExit(1) when one of its own steps
+            # failed — that's already logged step-by-step by cmd_run_all;
+            # here we just record it and move on to the next model.
+            batch_results[model_name] = "PARTIAL_FAILURE" if exc.code else "OK"
+        except Exception as exc:
+            batch_results[model_name] = f"FAILED: {type(exc).__name__}: {exc}"
+            print(f"[run-batch] model={model_name} FAILED: {type(exc).__name__}: {exc}")
+        print(f"[run-batch] ===== finished model={model_name} =====")
+
+    print(f"\n[run-batch] FINAL SUMMARY (num_samples={args.num_samples}, tag={args.tag}):")
+    for model_name, status in batch_results.items():
+        print(f"  {status:16s} {model_name}")
+
+
+def cmd_run_full(args):
+    """The single unattended command: data-prep for each listed dataset size
+    (skipped if already present), then run-batch at the first size for every
+    listed model, then the next size, etc. Sizes always run in the given
+    order, and ALL models finish a given size before the next size starts,
+    per the requested ordering."""
+    import data_prep
+
+    sizes = [int(s.strip()) for s in args.sizes.split(",") if s.strip()]
+    if not sizes:
+        raise SystemExit("--sizes must be a non-empty comma-separated list")
+
+    for num_samples in sizes:
+        cfg = data_prep.DataConfig(num_samples=num_samples)
+        if cfg.raw_path().exists():
+            print(f"[run-full] data/n{num_samples:03d} already exists, skipping data-prep")
+        else:
+            print(f"[run-full] running data-prep for num_samples={num_samples}")
+            data_prep.run(cfg)
+
+    for num_samples in sizes:
+        print(f"\n[run-full] ########## num_samples={num_samples} ##########")
+        batch_args = argparse.Namespace(
+            models=args.models, num_samples=num_samples, tag=args.tag,
+            mode=args.mode, both_modes=args.both_modes, force=args.force,
+        )
+        cmd_run_batch(batch_args)
+
+
 def cmd_manifest(args):
     entries = rm.load_manifest()
     if not entries:
@@ -311,13 +475,20 @@ def cmd_manifest(args):
     rm.print_manifest_table(entries)
 
 
-def _resolve_model(name):
+def _resolve_model(name, tag=None):
     if not name:
-        return MODELS_UNDER_TEST[0]
-    matches = [m for m in MODELS_UNDER_TEST if m.name == name]
-    if not matches:
-        raise SystemExit(f"Unknown model name: {name}. Known: {[m.name for m in MODELS_UNDER_TEST]}")
-    return matches[0]
+        model_cfg = MODELS_UNDER_TEST[0]
+    else:
+        matches = [m for m in MODELS_UNDER_TEST if m.name == name]
+        if not matches:
+            raise SystemExit(f"Unknown model name: {name}. Known: {[m.name for m in MODELS_UNDER_TEST]}")
+        model_cfg = matches[0]
+    if tag:
+        # Renaming only affects checkpoint/results paths (both keyed off
+        # model_cfg.name) — hf_model_id/lora_target_modules/etc. are
+        # untouched, so a "-v2" retrain never collides with the original run.
+        model_cfg = dataclasses.replace(model_cfg, name=f"{model_cfg.name}-{tag}")
+    return model_cfg
 
 
 def build_parser():
@@ -333,6 +504,8 @@ def build_parser():
     p.add_argument("--model", default=None)
     p.add_argument("--num-samples", type=int, default=None,
                     help="Must match what you passed to data_prep.py --num-samples.")
+    p.add_argument("--tag", default=None, help="Appends '-{tag}' to the model name for checkpoint naming.")
+    p.add_argument("--force", action="store_true", help="Redo training even if a completed checkpoint already exists.")
     p.set_defaults(func=cmd_train)
 
     p = sub.add_parser("inference")
@@ -372,10 +545,53 @@ def build_parser():
                          "use this if you ran data_prep.py with a different --num-samples than the config default.")
     p.add_argument("--force", action="store_true",
                     help="Overwrite an existing phase result (or regenerate an existing baseline) instead of skipping/erroring.")
+    p.add_argument("--tag", default=None, help="Appends '-{tag}' to the model name for results naming.")
     p.set_defaults(func=cmd_run_phase)
 
     p = sub.add_parser("manifest", help="Print results/manifest.jsonl as a table.")
     p.set_defaults(func=cmd_manifest)
+
+    p = sub.add_parser(
+        "run-all",
+        help="Convenience: run phase 1 baseline, then train+test phase 2, then train+test phase 3 "
+             "for one model in a single command — meant to be launched once and left running.",
+    )
+    p.add_argument("--model", default=None)
+    p.add_argument("--num-samples", type=int, default=None,
+                    help="Used for both data_prep-derived phase2/3 datasets and results/checkpoint naming. "
+                         "Must already have been produced by data_prep.py --num-samples.")
+    p.add_argument("--tag", default=None, help="Appends '-{tag}' to the model name everywhere (checkpoints + results).")
+    p.add_argument("--mode", default="adaptive", choices=["adaptive", "fixed"])
+    p.add_argument("--both-modes", action="store_true")
+    p.add_argument("--force", action="store_true")
+    p.set_defaults(func=cmd_run_all)
+
+    p = sub.add_parser(
+        "run-batch",
+        help="Convenience: run-all for each of several models, one after another, at one dataset size.",
+    )
+    p.add_argument("--models", required=True, help="Comma-separated model names, e.g. dialogpt-small,gemma-4-e2b-it")
+    p.add_argument("--num-samples", type=int, default=None)
+    p.add_argument("--tag", default=None)
+    p.add_argument("--mode", default="adaptive", choices=["adaptive", "fixed"])
+    p.add_argument("--both-modes", action="store_true")
+    p.add_argument("--force", action="store_true")
+    p.set_defaults(func=cmd_run_batch)
+
+    p = sub.add_parser(
+        "run-full",
+        help="Convenience: run-batch at each --sizes entry, in order, for every listed model. "
+             "This is the single command meant to be launched once and left running unattended.",
+    )
+    p.add_argument("--models", required=True, help="Comma-separated model names.")
+    p.add_argument("--sizes", default="50,500",
+                    help="Comma-separated dataset sizes, run in order (all models finish size N "
+                         "before size N+1 starts). Default '50,500'.")
+    p.add_argument("--tag", default=None)
+    p.add_argument("--mode", default="adaptive", choices=["adaptive", "fixed"])
+    p.add_argument("--both-modes", action="store_true")
+    p.add_argument("--force", action="store_true")
+    p.set_defaults(func=cmd_run_full)
 
     return parser
 

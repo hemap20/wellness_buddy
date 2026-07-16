@@ -167,6 +167,54 @@ MODELS_UNDER_TEST = [
         # final answer (see ModelRunner._strip_thinking_channel in inference.py).
         supports_thinking=True,
     ),
+    ModelUnderTest(
+        name="starling-lm-7b-alpha",
+        hf_model_id="berkeley-nest/Starling-LM-7B-alpha",
+        max_new_tokens=128,
+        device="mps",
+        # Verified live via AutoConfig: model_type="mistral", text-only
+        # (no vision/audio tower), standard Llama-family attention naming —
+        # bare names are safe here, no path-scoped regex needed (unlike
+        # gemma-4-e2b-it's multimodal collision above).
+        lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
+        torch_dtype="bfloat16",  # 7B params — bf16 keeps this within reach of 24GB unified RAM
+        gated=False,
+    ),
+    ModelUnderTest(
+        name="empathetic-qwen3-8b-jan",
+        hf_model_id="Someet24/empathetic-qwen3-8b-Jan",
+        max_new_tokens=128,
+        device="mps",
+        # Verified live via AutoConfig: model_type="qwen3", text-only,
+        # natively supported by transformers (no trust_remote_code needed).
+        # 8B params on 24GB unified RAM is tight even at bf16 (~16GB weights
+        # alone) — accepted OOM risk per explicit choice; if it fails, this
+        # step is isolated by run-all's per-step try/except and the rest of
+        # the batch continues.
+        lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
+        torch_dtype="bfloat16",
+        gated=False,
+    ),
+    ModelUnderTest(
+        name="mistral-7b-instruct-v0.3",
+        hf_model_id="mistralai/Mistral-7B-Instruct-v0.3",
+        max_new_tokens=128,
+        device="mps",
+        lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
+        torch_dtype="bfloat16",
+        gated=True,  # gated repo; access already approved for the configured HF_TOKEN
+    ),
+    ModelUnderTest(
+        name="llama-3-8b",
+        hf_model_id="meta-llama/Meta-Llama-3-8B",
+        max_new_tokens=128,
+        device="mps",
+        # Same standard Llama attention naming as the other non-gemma models
+        # above — no known multimodal collision risk for this architecture.
+        lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
+        torch_dtype="bfloat16",
+        gated=True,  # access approved for the configured HF_TOKEN — verified live via AutoConfig
+    ),
 ]
 
 
@@ -182,7 +230,8 @@ class TrainingConfig:
     lora_alpha: int = 16
     lora_dropout: float = 0.05
     learning_rate: float = 1e-4
-    num_train_epochs: int = 5
+    weight_decay: float = 0.01
+    num_train_epochs: int = 3
     per_device_train_batch_size: int = 1
     gradient_accumulation_steps: int = 1
     max_seq_length: int = 256

@@ -41,7 +41,9 @@ cat checkpoints/dialogpt-small_phase2/train_summary.json
 cat checkpoints/dialogpt-small_phase3/train_summary.json
 ```
 
-Checkpoints (the actual weights) stay at `checkpoints/dialogpt-small_phase{2,3}/{step_N_pct_M,final}` — unchanged location. `run-phase` (step 6) copies the step numbers/paths and the loss curve from here into `results/` as metadata; the weights themselves are never duplicated there.
+Checkpoints (the actual weights) live at `checkpoints/{model}_n{size}_phase{N}/{step_N_pct_M,final}` — namespaced by dataset size (same `n050`/`n500` convention as `data/` and `results/`), so re-training the same model/phase at a different `--num-samples` never overwrites a previous run's weights. `run-phase` (step 6) copies the step numbers/paths and the loss curve from here into `results/` as metadata; the weights themselves are never duplicated there.
+
+> **Note:** the `dialogpt-small_phase2`/`gemma-4-e2b-it_phase2` (etc.) checkpoint dirs from earlier n050 runs predate this dataset-size namespacing fix and don't have the `_n050_` segment in their name — they're still valid and still referenced correctly by their original `run-phase`/`--adapter` commands below. Any *new* training run (including a fresh n050 retrain) will use the new `_n{size}_` naming.
 
 ## 3. Inference smoke test (no simulator/judge, just one generation)
 
