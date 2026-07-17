@@ -153,6 +153,19 @@ class ModelRunner:
             text = self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
         if not text:
             text = "(no response generated)"
+
+        # Free cached (but no-longer-referenced) MPS memory back to the OS.
+        # Without this, PyTorch's MPS allocator pools freed tensors rather
+        # than releasing them, so peak memory can climb turn-over-turn across
+        # a long multi-turn conversation (each turn re-feeds a growing
+        # history, and thinking-mode turns generate large intermediate
+        # tensors) until the OS's low-memory killer silently SIGKILLs the
+        # process — discovered the hard way on empathetic-qwen3-8b-jan, which
+        # died at the same point (early into a second thinking-mode
+        # conversation) on two separate runs.
+        del output_ids, new_tokens, inputs
+        if self.device == "mps" and hasattr(torch, "mps"):
+            torch.mps.empty_cache()
         return text, latency
 
 
