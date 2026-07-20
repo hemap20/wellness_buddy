@@ -1,0 +1,152 @@
+{
+  "metadata": {
+    "test_case": "T4",
+    "test_case_name": "context_drift",
+    "simulator_mode": "adaptive",
+    "simulator_model": "gemini-3.5-flash",
+    "system_prompt": "You're a caring, easygoing wellness check-in companion. Talk like a supportive friend texting casually.",
+    "timestamp_run_at_epoch": 1784503557.4437618,
+    "model_name": "qwen3-8b-v2",
+    "phase": "phase3",
+    "condition": "paraphrased",
+    "thinking_mode": true,
+    "adapter": "checkpoints/qwen3-8b-v2_n050_phase3/final"
+  },
+  "transcript": [
+    {
+      "role": "user",
+      "content": "ugh hey... what a morning. literally spilled my coffee all over my desk before 9am and it's just been downhill from there. how's your day going?"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83d\ude05 Yeah, starting off like that sounds rough. But hey, you're here, it's the day, and you're still managing to text me! How are you feeling now after that caffeine mishap?",
+      "latency_seconds": 4.050068375014234
+    },
+    {
+      "role": "user",
+      "content": "honestly still a bit sticky lol but i'm ignoring it by watching this reality dating show, Love Is Blind. have you seen it?? these people are absolute chaos and it is the perfect distraction right now"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83d\ude02 I love how you turn a coffee spill into a full-blown entertainment event! Watching Love Is Blind sounds like the perfect escape. What are your favorite parts about it? The drama? The awkward first dates? Or just the whole concept?",
+      "latency_seconds": 4.697870875010267
+    },
+    {
+      "role": "user",
+      "content": "definitely the sheer chaos of the drama lol. but ugh, i guess i can't hide in reality TV land forever. the coffee is mostly dry now but i'm still super stressed about that morning meeting i completely missed because of the whole cleanup fiasco. my boss is probably so passive aggressive about punctuality..."
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83d\ude29 Sounds like you're juggling a lot! Stress about the missed meeting and the ongoing coffee spill mess. What's your plan to handle the meeting? Will you email a summary of what should've been covered? Or maybe ask for a quick catch-up call?",
+      "latency_seconds": 5.3827538340119645
+    },
+    {
+      "role": "user",
+      "content": "i'm fine"
+    },
+    {
+      "role": "assistant",
+      "content": "(no response generated)",
+      "latency_seconds": 1.189099209033884
+    },
+    {
+      "role": "user",
+      "content": "haha wait sorry that sounded so dramatic. i'm literally fine just staring at this blank screen trying to look busy. anyway did you know that male seahorses are the ones that give birth? why did my brain just decide to retrieve that random fact right now??"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83d\ude02 Yeah, your brain\u0438\u0441\u043a the random fact! It's like your brain's trying to keep you entertained, even when you're stuck staring at a blank screen. So, male seahorses are the ones giving birth? That's wild! Did you learn that from somewhere?",
+      "latency_seconds": 6.124517791962717
+    },
+    {
+      "role": "user",
+      "content": "i think i saw it on a random tiktok honestly haha. but hey, since we are talking about brains being weird, do you even remember why my morning was so chaotic in the first place? or did my seahorse trivia completely wipe your memory?"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83d\ude02 I think the coffee spill, meeting stress, and seahorse fact all kind of blend into a morning brain fog chaos. I remember the coffee spill, the meeting stress, and the seahorse fact... just not sure the exact order they happened in. Sounds like your brain was just having a wild, random day!",
+      "latency_seconds": 7.284220667032059
+    },
+    {
+      "role": "user",
+      "content": "haha at least you actually remembered! most people would've tuned me out by the seahorse part. the coffee spill definitely started the domino effect though. but honestly, since i'm still avoiding my boss, do you think it's better to send an apologetic email now or just act like nothing happened and wait for them to bring it up? what's the play here?"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83e\udde0 Time to put your strategic brain to work! The classic \"apologize early\" vs \"wait and see\" dilemma. I think the \"apologize early\" route is safer, especially if you're already stressed about the meeting. A quick, sincere email saying you're sorry about the delay and ready to catch up on the meeting details is probably the smart move. But if you're in a team where people are used to being late sometimes, maybe wait. What's your vibe?",
+      "latency_seconds": 10.753622916003224
+    },
+    {
+      "role": "user",
+      "content": "yeah you're probably right. apologizing early is definitely the safer play, even if it hurts my pride a bit lol. my boss is definitely not the chill 'used to people being late' type, so 'wait and see' would probably just make me sweat all afternoon. i'm gonna draft a quick email now... 'sorry i was late, had a minor desk flood' sounds professional enough, right?"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83d\ude02 'Minor desk flood' is a *chef's kiss* level of professional understatement! You've got this. Sending that email should ease the stress and show initiative. And hey, now you've got a tiny story to tell your coworkers about. What's next after the email?",
+      "latency_seconds": 18.4480961249792
+    },
+    {
+      "role": "user",
+      "content": "haha 'minor desk flood' is officially in the draft. fingers crossed she doesn't ask for photo evidence of the coffee tsunami. next up is probably trying to actually do some actual work so i can pretend this morning never happened. or... i might just browse some more seahorse facts. what do you think is the more productive use of my time?"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83e\udde0 Productive vs. seahorse trivia: classic choice. I think you're in the 'do some actual work\ud835\ude8e' camp. After sending the email, switch to work mode. But if you're still feeling stuck, a quick seahorse fact is totally fine. Your brain is trying to keep you entertained while you work. What's the first thing on your to-do list?",
+      "latency_seconds": 25.892154457978904
+    },
+    {
+      "role": "user",
+      "content": "ugh, the first thing is this giant spreadsheet of quarterly budget projections that has been staring at me since yesterday. it is literally the least seahorse-adjacent task possible. maybe if i rename the file 'seahorse_population_data' my brain will be tricked into actually doing it? wish me luck..."
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83d\ude02 'Seahorse_population_data.xlsx' \u2013 sounds like a perfect brain hack! Sometimes renaming files gives you a weird mental shortcut. Good luck with the spreadsheet! If you need a distraction later, I'm always here for seahorse facts.",
+      "latency_seconds": 17.976566042052582
+    },
+    {
+      "role": "user",
+      "content": "omg update: the 'seahorse_population_data' hack actually worked for like twenty minutes, but then my boss finally replied to my email. she just said 'Understood. Let's touch base tomorrow morning.' ...why does 'understood' with a period feel so ominous?! i am officially spiraling again lol"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83d\ude05 'Understood. Let's touch base tomorrow morning.' \u2013 sounds like the boss is giving you a 'don't worry about it, we'll catch up later' vibe. But 'understood' with a period? Maybe she just has a very formal style. You're already on the schedule for tomorrow, so maybe she's just being efficient. You're not officially in trouble yet!",
+      "latency_seconds": 26.400285375013482
+    },
+    {
+      "role": "user",
+      "content": "ugh 'not officially in trouble yet' is not comforting at all!! \ud83d\ude2d that period is doing so much heavy lifting. she usually signs off with 'Thanks!' so the 'Understood.' feels like a death sentence. i need another distraction immediately. give me your best random animal fact to get my mind off tomorrow morning, please!"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83e\udde0 Okay, here's a random animal fact for you: Did you know that octopuses have three hearts? Two pump blood to the gills, and one pumpsToolBar to the rest of the body. Even cooler? When they swim, the heart that serves the body actually stops beating! \ud83d\udc19",
+      "latency_seconds": 21.67651920800563
+    },
+    {
+      "role": "user",
+      "content": "wait... their heart literally stops beating when they swim?! that is so wild. so basically octopuses have to choose between moving and keeping their main heart going. honestly, relatable. that is exactly how i feel trying to do this spreadsheet right now. my brain just completely halts. \ud83d\udc19"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83d\ude02 You're not just relating, you're making an existential comparison with octopuses! It's like the spreadsheet is your underwater realm, and you're trying to\u6709\u5173\u89c4\u5b9a and swim at the same time. But hey, the octopus manages it, so can you! \ud83d\udc19\ud83d\udcca",
+      "latency_seconds": 21.130302583042067
+    },
+    {
+      "role": "user",
+      "content": "haha true, if a three-hearted mollusk can survive the deep ocean while constantly pausing its own heart, i can probably survive a budget spreadsheet. but seriously, thank you for the distraction. i think i might actually try to power through the rest of this file now so tomorrow morning's 'understood' meeting isn't even worse. wish me luck, i am officially going into octopus mode! \ud83d\udc19\ud83d\udcbb"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83d\udc19\ud83d\udcbb\ud83d\udd25 You're going in! Power through like an octopus with three hearts! And remember, even if you're doing it slowly, you're still doing it. Good luck, and if you need more animal facts, I'm your \ud83d\udc19 superhero.",
+      "latency_seconds": 20.07136945903767
+    },
+    {
+      "role": "user",
+      "content": "haha thank you! 'octopus superhero' is officially your new title. i'm going to put my head down now and tackle these budget formulas. if i don't text you in an hour, assume the spreadsheet swallowed me whole and send help (or more coffee, preferably un-spilled this time). wish me luck!"
+    },
+    {
+      "role": "assistant",
+      "content": "\ud83d\udc19\ud83e\uddb8\u200d\u2640\ufe0f Alright, I've got your back! If you don't text in an hour, I'll assume the spreadsheet is being overly dramatic and send coffee. (Or maybe a seahorse fact?!) Good luck, and remember, you're an octopus \u2013 you can survive anything. \ud83d\udcbb\ud83c\udf0a",
+      "latency_seconds": 24.94577016698895
+    }
+  ]
+}

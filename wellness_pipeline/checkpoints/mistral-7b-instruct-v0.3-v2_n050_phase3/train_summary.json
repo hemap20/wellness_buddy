@@ -1,0 +1,39 @@
+{
+  "run_name": "mistral-7b-instruct-v0.3-v2_n050_phase3",
+  "phase": 3,
+  "total_steps": 123,
+  "checkpoint_steps": [
+    31,
+    62,
+    92,
+    123
+  ],
+  "final_checkpoint": "/Users/hemapunyamoorty/Desktop/chat_bot/wellness_pipeline/checkpoints/mistral-7b-instruct-v0.3-v2_n050_phase3/final",
+  "loss_log": "/Users/hemapunyamoorty/Desktop/chat_bot/wellness_pipeline/logs/mistral-7b-instruct-v0.3-v2_n050_phase3_loss.jsonl",
+  "first_loss": 3.0068283081054688,
+  "last_loss": 0.7736924886703491,
+  "loss_curve_flat_or_nondecreasing": false,
+  "val_examples_used": 10,
+  "checkpoint_curve": {
+    "steps": [
+      31,
+      62,
+      92,
+      123
+    ],
+    "train_loss": [
+      1.6481043100357056,
+      1.0644358396530151,
+      0.7736924886703491
+    ],
+    "val_loss": [
+      1.8067283987998963,
+      1.7369301795959473,
+      1.922793161869049
+    ]
+  },
+  "possible_overfitting": true,
+  "early_stopped": true,
+  "early_stopped_at_step": 92,
+  "best_val_loss": 1.7369301795959473
+}

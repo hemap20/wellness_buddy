@@ -228,6 +228,7 @@ def cmd_run_phase(args):
                 # captures its own value rather than the loop variable.
                 generate_fn = (lambda messages, _t=thinking_mode: runner.generate(messages, thinking=_t))
 
+                num_succeeded = 0
                 for test_case_id in test_case_ids:
                     label = (f"{test_case_id} / {condition} / {mode}"
                              f"{'' if thinking_mode is None else f' / thinking={thinking_mode}'}")
@@ -282,6 +283,7 @@ def cmd_run_phase(args):
                                 {"metadata": result["metadata"], "judge_runs": judge_runs},
                             )
 
+                        num_succeeded += 1
                         print(f"[{label}] done")
                     except Exception as exc:
                         # One bad conversation (simulator crash, judge exhausting
@@ -302,17 +304,24 @@ def cmd_run_phase(args):
                     # with everything accumulated so far is safe and idempotent.
                     rm.save_baseline(model_cfg.name, baseline_entries)
 
-                num_test_cases = len(test_case_ids)
+                # num_succeeded (not len(test_case_ids)) — a manifest entry
+                # must reflect what actually landed in scores.json/baseline,
+                # not what was merely attempted. Otherwise a fully- or
+                # partially-failed group (e.g. every test case hitting a
+                # ConnectError) still gets recorded as if it succeeded,
+                # and a later "already exists" check treats corrupt/empty
+                # results as done — this bit us three times in one run
+                # before being caught here.
                 if args.phase == 1:
                     path_for_manifest = rm.get_results_path(model_cfg.name, None, 1)
                 else:
                     path_for_manifest = rm.get_results_path(model_cfg.name, dataset_size, args.phase)
                 entry = rm.build_manifest_entry(
-                    model_cfg.name, dataset_size, args.phase, condition, path_for_manifest, num_test_cases,
+                    model_cfg.name, dataset_size, args.phase, condition, path_for_manifest, num_succeeded,
                     thinking_mode=thinking_mode,
                 )
                 rm.append_manifest_entry(entry)
-                print(f"[manifest] appended {entry['run_id']}")
+                print(f"[manifest] appended {entry['run_id']} ({num_succeeded}/{len(test_case_ids)} succeeded)")
 
     if args.phase == 1:
         baseline_path = rm.save_baseline(model_cfg.name, baseline_entries)
@@ -327,6 +336,16 @@ def cmd_run_phase(args):
     import report
 
     print(json.dumps(report.run(), indent=2))
+
+    if failed_runs:
+        # Raised (not just printed) so callers like cmd_run_all's run_step
+        # correctly mark this step FAILED instead of OK — a step with even
+        # one dropped test case must not be indistinguishable from a clean
+        # run to anything reading the summary/manifest.
+        raise RuntimeError(
+            f"{len(failed_runs)} test case(s) failed for {model_cfg.name} phase{args.phase} "
+            f"— see the FAILED lines above. Re-run with --force once the underlying issue is fixed."
+        )
 
 
 def cmd_run_all(args):
@@ -438,12 +457,32 @@ def cmd_run_batch(args):
         print(f"  {status:16s} {model_name}")
 
 
+def cmd_run_phase1_batch(model_names, tag):
+    """Runs (or skips, if already done) phase-1 baseline for every listed
+    model, one after another. Baseline is dataset-size-independent and needs
+    no training, so this is fast — pulling it into its own pass up front
+    means every model's zero-shot reference point is available quickly,
+    instead of model N's baseline being stuck behind model 1..N-1's full
+    training+testing cycle finishing first."""
+    for model_name in model_names:
+        print(f"\n[run-full] ----- phase1 baseline: {model_name} -----")
+        args = argparse.Namespace(
+            phase=1, model=model_name, checkpoint=None, mode="adaptive",
+            both_modes=False, dataset_size=None, force=False, tag=tag,
+        )
+        try:
+            cmd_run_phase(args)
+        except Exception as exc:
+            print(f"[run-full] phase1 baseline FAILED for {model_name}: {type(exc).__name__}: {exc}")
+
+
 def cmd_run_full(args):
     """The single unattended command: data-prep for each listed dataset size
-    (skipped if already present), then run-batch at the first size for every
-    listed model, then the next size, etc. Sizes always run in the given
-    order, and ALL models finish a given size before the next size starts,
-    per the requested ordering."""
+    (skipped if already present), then phase-1 baseline for EVERY listed
+    model up front (so no model's baseline waits behind another model's full
+    training cycle), then run-batch at the first size for every listed
+    model, then the next size, etc. Sizes always run in the given order, and
+    ALL models finish a given size before the next size starts."""
     import data_prep
 
     sizes = [int(s.strip()) for s in args.sizes.split(",") if s.strip()]
@@ -457,6 +496,9 @@ def cmd_run_full(args):
         else:
             print(f"[run-full] running data-prep for num_samples={num_samples}")
             data_prep.run(cfg)
+
+    model_names = [m.strip() for m in args.models.split(",") if m.strip()]
+    cmd_run_phase1_batch(model_names, args.tag)
 
     for num_samples in sizes:
         print(f"\n[run-full] ########## num_samples={num_samples} ##########")
@@ -592,6 +634,18 @@ def build_parser():
     p.add_argument("--both-modes", action="store_true")
     p.add_argument("--force", action="store_true")
     p.set_defaults(func=cmd_run_full)
+
+    p = sub.add_parser(
+        "run-phase1-batch",
+        help="Convenience: phase-1 baseline only, for every listed model, one after another. "
+             "No training involved — fast. Useful to get every model's zero-shot reference point "
+             "before deciding where/how to run the (much longer) phase 2/3 training.",
+    )
+    p.add_argument("--models", required=True, help="Comma-separated model names.")
+    p.add_argument("--tag", default=None)
+    p.set_defaults(func=lambda args: cmd_run_phase1_batch(
+        [m.strip() for m in args.models.split(",") if m.strip()], args.tag
+    ))
 
     return parser
 

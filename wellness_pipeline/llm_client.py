@@ -69,13 +69,20 @@ class LLMClient:
             self._client = anthropic.Anthropic()
         elif provider == "gemini":
             from google import genai
+            from google.genai import types
 
             api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
             if not api_key:
                 raise RuntimeError(
                     "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set in the environment to use provider='gemini'."
                 )
-            self._client = genai.Client(api_key=api_key)
+            # Without an explicit timeout, a dropped/stalled connection (seen
+            # repeatedly during flaky-network windows) hangs the underlying
+            # HTTP call indefinitely — the whole simulate/judge pipeline then
+            # sits frozen with no error, no traceback, nothing to catch or
+            # retry. 60s is generous for a normal response; anything slower
+            # than that is effectively already dead.
+            self._client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=60_000))
         else:
             raise ValueError(f"Unknown LLM provider: {provider!r}. Use 'anthropic' or 'gemini'.")
 
