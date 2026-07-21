@@ -72,13 +72,11 @@ def get_git_commit(cwd: Optional[Path] = None) -> str:
 
 
 def make_run_id(model_name: str, dataset_size: Optional[int], phase: int,
-                 condition: Optional[str], timestamp: Optional[str] = None,
-                 thinking_mode: Optional[bool] = None) -> str:
+                 condition: Optional[str], timestamp: Optional[str] = None) -> str:
     timestamp = timestamp or time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     size_part = format_dataset_size(dataset_size) if dataset_size is not None else "nNA"
     cond_part = condition or "na"
-    thinking_part = "" if thinking_mode is None else ("_thinking_on" if thinking_mode else "_thinking_off")
-    return f"{sanitize_model_name(model_name)}_{size_part}_phase{phase}_{cond_part}{thinking_part}_{timestamp}"
+    return f"{sanitize_model_name(model_name)}_{size_part}_phase{phase}_{cond_part}_{timestamp}"
 
 
 # ---------------------------------------------------------------------------
@@ -87,8 +85,14 @@ def make_run_id(model_name: str, dataset_size: Optional[int], phase: int,
 
 def get_results_path(model_name: str, dataset_size: Optional[int], phase: int,
                       subfolder: Optional[str] = None, root: Path = None) -> Path:
-    """Returns the path for this model/dataset_size/phase, creating parent
-    directories as needed.
+    """Returns the path for this model/dataset_size/phase. Pure path
+    building only — does NOT create any directories. Every call site that
+    reads (report.py, generate_charts.py, load_scores/load_baseline, the
+    "already exists" skip-check) used to silently scaffold empty directory
+    trees on disk just by looking, which is how empty leftover folders kept
+    appearing after models got renamed. Only the actual writers
+    (append_scores_entry, save_baseline, transcript saving in
+    orchestrator.py) create directories now, immediately before writing.
 
     phase == 1 (baseline) is a special case: returns the FILE path
     `results/{model}/phase1_baseline.json` directly, ignoring dataset_size
@@ -99,16 +103,13 @@ def get_results_path(model_name: str, dataset_size: Optional[int], phase: int,
     model_dir = root / sanitize_model_name(model_name)
 
     if phase == 1:
-        model_dir.mkdir(parents=True, exist_ok=True)
         return model_dir / "phase1_baseline.json"
 
     if dataset_size is None:
         raise ValueError("dataset_size is required for phase 2/3 paths.")
 
     phase_dir = model_dir / format_dataset_size(dataset_size) / f"phase{phase}"
-    target = phase_dir / subfolder if subfolder else phase_dir
-    target.mkdir(parents=True, exist_ok=True)
-    return target
+    return phase_dir / subfolder if subfolder else phase_dir
 
 
 def get_manifest_path(root: Path = None) -> Path:
@@ -137,8 +138,7 @@ def check_existing_run(model_name: str, dataset_size: int, phase: int, root: Pat
     """Returns {"exists": bool, "path": str, "has_content": bool}. `has_content`
     is True if scores.json (or, for phase1, the baseline file) already has
     at least one recorded result — that's the signal an accidental re-run
-    would clobber real data, not just an empty directory `get_results_path`
-    already created."""
+    would clobber real data, as opposed to an empty/nonexistent directory."""
     if phase == 1:
         path = get_results_path(model_name, None, 1, root=root)
         exists = path.exists()
@@ -177,6 +177,7 @@ def append_scores_entry(model_name: str, dataset_size: int, phase: int, entry: d
     scores.json — read-modify-write is safe here since each phase folder is
     only ever written by one run at a time, unlike the global manifest."""
     phase_dir = get_results_path(model_name, dataset_size, phase, root=root)
+    phase_dir.mkdir(parents=True, exist_ok=True)
     scores_path = phase_dir / "scores.json"
 
     existing = []
@@ -203,6 +204,7 @@ def save_baseline(model_name: str, entries: list[dict], root: Path = None) -> Pa
     covering every test_case/condition run in phase 1. Written once — see
     baseline_exists()/require_no_existing_run() for the dedup guard."""
     path = get_results_path(model_name, None, 1, root=root)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"model": model_name, "phase": 1, "generated_at": _now_iso(), "results": entries}, f, indent=2)
     return path
@@ -227,15 +229,13 @@ def _now_iso() -> str:
 
 def build_manifest_entry(model_name: str, dataset_size: Optional[int], phase: int,
                           condition: Optional[str], path: Path, num_test_cases: int,
-                          status: str = "completed", run_id: Optional[str] = None,
-                          thinking_mode: Optional[bool] = None) -> dict:
+                          status: str = "completed", run_id: Optional[str] = None) -> dict:
     return {
-        "run_id": run_id or make_run_id(model_name, dataset_size, phase, condition, thinking_mode=thinking_mode),
+        "run_id": run_id or make_run_id(model_name, dataset_size, phase, condition),
         "model": model_name,
         "dataset_size": dataset_size,
         "phase": phase,
         "condition": condition,
-        "thinking_mode": thinking_mode,  # None for models without a thinking toggle
         "path": str(path),
         "timestamp": _now_iso(),
         "git_commit": get_git_commit(),

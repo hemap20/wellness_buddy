@@ -90,7 +90,6 @@ def _row_from_entry(meta: dict, runs: list[dict], dataset_size, phase_int: int, 
         "dataset_size": dataset_size,
         "phase": meta.get("phase"),
         "condition": meta.get("condition"),
-        "thinking_mode": meta.get("thinking_mode"),  # None for models without a thinking toggle
         "test_case": meta.get("test_case"),
         "simulator_mode": meta.get("simulator_mode"),
         "num_judge_runs": len(runs),
@@ -139,8 +138,7 @@ def build_rows_from_manifest() -> list[dict]:
     # every condition for that phase — dedupe by the natural row key)
     dedup = {}
     for row in rows:
-        key = (row["model"], row["dataset_size"], row["phase"], row["condition"],
-               row["thinking_mode"], row["test_case"])
+        key = (row["model"], row["dataset_size"], row["phase"], row["condition"], row["test_case"])
         dedup[key] = row
     return list(dedup.values())
 
@@ -162,18 +160,16 @@ def build_rows_legacy(scores_dir: str) -> list[dict]:
 def build_summary(rows: list[dict]) -> list[dict]:
     groups: dict[tuple, list[dict]] = {}
     for row in rows:
-        key = (row["model"], row["dataset_size"], row["phase"], row["condition"], row["thinking_mode"])
+        key = (row["model"], row["dataset_size"], row["phase"], row["condition"])
         groups.setdefault(key, []).append(row)
 
     summary = []
-    for (model, dataset_size, phase, condition, thinking_mode), group_rows in sorted(
+    for (model, dataset_size, phase, condition), group_rows in sorted(
         groups.items(), key=lambda kv: [str(x) for x in kv[0]]
     ):
         entry = {
             "model": model, "dataset_size": dataset_size, "phase": phase, "condition": condition,
-            "thinking_mode": thinking_mode,
             "num_test_cases": len(group_rows),
-            "any_flagged_for_human_review": any(r["flagged_for_human_review"] for r in group_rows),
             # Same value on every row in this group (one training run per
             # model/dataset_size/phase) — just read it off the first row
             # rather than aggregating, since it's a fact about the training

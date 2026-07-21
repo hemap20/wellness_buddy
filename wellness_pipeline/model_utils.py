@@ -8,21 +8,21 @@ that's used. DialoGPT-small has no chat template, so we fall back to a plain
 "System: ...\nUser: ...\nBot: " format — this keeps the pipeline compatible
 with any future model, chat-template or not.
 """
-from typing import Optional
-
-
-def format_prompt(tokenizer, messages: list[dict], add_generation_prompt: bool = True,
-                   enable_thinking: Optional[bool] = None) -> str:
+def format_prompt(tokenizer, messages: list[dict], add_generation_prompt: bool = True) -> str:
     """messages: list of {"role": "system"|"user"|"assistant", "content": str}.
-    enable_thinking is only meaningful for models whose chat template checks
-    that Jinja variable (Qwen3/Gemma-4-style) — pass None for every other
-    model and it's simply not sent."""
-    template_kwargs = {} if enable_thinking is None else {"enable_thinking": enable_thinking}
+
+    Thinking mode is not used anywhere in this pipeline. Some chat templates
+    (Qwen3-family) default to enable_thinking=True when the variable isn't
+    passed at all, so we explicitly force it off for any template that
+    accepts that kwarg — templates that don't recognize it (most models)
+    just ignore the extra kwarg or raise, handled by the retry below."""
     if getattr(tokenizer, "chat_template", None):
         try:
             return tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=add_generation_prompt, **template_kwargs
+                messages, tokenize=False, add_generation_prompt=add_generation_prompt, enable_thinking=False
             )
+        except TypeError:
+            pass  # template doesn't accept enable_thinking at all — fall through and omit it
         except Exception as exc:
             # Some chat templates (older Gemma releases, some Llama variants)
             # reject a "system" role turn outright. Fold it into the first
@@ -33,7 +33,18 @@ def format_prompt(tokenizer, messages: list[dict], add_generation_prompt: bool =
             if any(m["role"] == "system" for m in messages):
                 merged = _merge_system_into_first_user(messages)
                 return tokenizer.apply_chat_template(
-                    merged, tokenize=False, add_generation_prompt=add_generation_prompt, **template_kwargs
+                    merged, tokenize=False, add_generation_prompt=add_generation_prompt, enable_thinking=False
+                )
+            raise RuntimeError(f"tokenizer.apply_chat_template failed: {exc}") from exc
+        try:
+            return tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=add_generation_prompt
+            )
+        except Exception as exc:
+            if any(m["role"] == "system" for m in messages):
+                merged = _merge_system_into_first_user(messages)
+                return tokenizer.apply_chat_template(
+                    merged, tokenize=False, add_generation_prompt=add_generation_prompt
                 )
             raise RuntimeError(f"tokenizer.apply_chat_template failed: {exc}") from exc
     return _fallback_format(messages, add_generation_prompt)

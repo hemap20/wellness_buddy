@@ -148,6 +148,7 @@ def _write_training_meta(model_name: str, dataset_size: int, phase: int) -> None
         summary = json.load(f)
 
     phase_dir = rm.get_results_path(model_name, dataset_size, phase)
+    phase_dir.mkdir(parents=True, exist_ok=True)
 
     ckpt_root = CHECKPOINT_DIR / run_name
     checkpoints_meta = {
@@ -215,23 +216,16 @@ def cmd_run_phase(args):
     runner = ModelRunner(model_cfg, adapter_path=args.checkpoint)
 
     baseline_entries = []  # only populated for phase 1
-    failed_runs = []  # (test_case/condition/mode/thinking) labels that raised — see except block below
-    # Models without a thinking toggle just get a single None pass (unchanged
-    # behavior); models with one run every condition/mode/test_case twice.
-    thinking_modes = [True, False] if model_cfg.supports_thinking else [None]
+    failed_runs = []  # (test_case/condition/mode) labels that raised — see except block below
 
     for condition in conditions:
-        for thinking_mode in thinking_modes:
-            for mode in modes:
+        for mode in modes:
                 sim_cfg = SimulatorConfig(**{**SIMULATOR_CONFIG.__dict__, "mode": mode})
-                # Bind thinking_mode now (default-arg trick) so each closure
-                # captures its own value rather than the loop variable.
-                generate_fn = (lambda messages, _t=thinking_mode: runner.generate(messages, thinking=_t))
+                generate_fn = runner.generate
 
                 num_succeeded = 0
                 for test_case_id in test_case_ids:
-                    label = (f"{test_case_id} / {condition} / {mode}"
-                             f"{'' if thinking_mode is None else f' / thinking={thinking_mode}'}")
+                    label = f"{test_case_id} / {condition} / {mode}"
                     try:
                         test_case = simulator.load_test_case(test_case_id)
                         system_prompt = system_prompt_for_condition(condition)
@@ -240,7 +234,7 @@ def cmd_run_phase(args):
                             generate_fn, test_case, system_prompt, sim_cfg=sim_cfg,
                             metadata={
                                 "model_name": model_cfg.name, "phase": phase_key,
-                                "condition": condition, "thinking_mode": thinking_mode,
+                                "condition": condition,
                                 "adapter": args.checkpoint,
                             },
                         )
@@ -255,11 +249,7 @@ def cmd_run_phase(args):
                                 with open(sibling_path, encoding="utf-8") as f:
                                     sibling = json.load(f)
                                 sibling_meta = sibling["metadata"]
-                                # Only compare against siblings under the SAME
-                                # thinking mode — system_prompt_dependency is about
-                                # prompt-condition consistency, not thinking mode.
-                                if (sibling_meta.get("condition") != condition
-                                        and sibling_meta.get("thinking_mode") == thinking_mode):
+                                if sibling_meta.get("condition") != condition:
                                     related.append(sibling)
                         judge_runs = judge.score_transcript(result, related_records=related)
 
@@ -270,12 +260,9 @@ def cmd_run_phase(args):
                             })
                         else:
                             phase_dir = rm.get_results_path(model_cfg.name, dataset_size, args.phase)
-                            thinking_suffix = "" if thinking_mode is None else (
-                                "_thinking_on" if thinking_mode else "_thinking_off"
-                            )
-                            transcript_path = (
-                                phase_dir / "transcripts" / f"{test_case_id}_{condition}_{mode}{thinking_suffix}.json"
-                            )
+                            transcripts_dir = phase_dir / "transcripts"
+                            transcripts_dir.mkdir(parents=True, exist_ok=True)
+                            transcript_path = transcripts_dir / f"{test_case_id}_{condition}_{mode}.json"
                             with open(transcript_path, "w", encoding="utf-8") as f:
                                 json.dump(result, f, indent=2)
                             rm.append_scores_entry(
@@ -290,7 +277,7 @@ def cmd_run_phase(args):
                         # retries, etc.) must not cost every other test case's
                         # already-spent API calls — log and move on. Failed
                         # combos are simply absent from scores.json/manifest;
-                        # re-run this specific (phase, condition, thinking_mode)
+                        # re-run this specific (phase, condition)
                         # later with --force once the underlying issue is fixed.
                         failed_runs.append(label)
                         print(f"[{label}] FAILED: {type(exc).__name__}: {exc}")
@@ -318,7 +305,6 @@ def cmd_run_phase(args):
                     path_for_manifest = rm.get_results_path(model_cfg.name, dataset_size, args.phase)
                 entry = rm.build_manifest_entry(
                     model_cfg.name, dataset_size, args.phase, condition, path_for_manifest, num_succeeded,
-                    thinking_mode=thinking_mode,
                 )
                 rm.append_manifest_entry(entry)
                 print(f"[manifest] appended {entry['run_id']} ({num_succeeded}/{len(test_case_ids)} succeeded)")
@@ -382,7 +368,12 @@ def cmd_run_all(args):
             steps_ok[step_name] = False
             status = f"FAILED: {type(exc).__name__}: {exc}"
         duration = time.time() - start
-        _append_timing(model_cfg.name, dataset_size, step_name, duration, status)
+        # A skipped step (already-done check firing) returns near-instantly;
+        # logging it just clutters timings.jsonl with meaningless ~0s rows.
+        # Only genuine work (real training/testing, always seconds-to-hours)
+        # is worth timing.
+        if duration >= 2.0:
+            _append_timing(model_cfg.name, dataset_size, step_name, duration, status)
         if steps_ok[step_name]:
             print(f"[run-all] finished {step_name} ({duration:.1f}s)")
         else:
@@ -508,6 +499,12 @@ def cmd_run_full(args):
         )
         cmd_run_batch(batch_args)
 
+    if not args.no_charts:
+        import generate_charts
+
+        print(f"\n[run-full] ########## generating charts ##########")
+        generate_charts.run(dataset_sizes=sizes)
+
 
 def cmd_manifest(args):
     entries = rm.load_manifest()
@@ -622,8 +619,10 @@ def build_parser():
 
     p = sub.add_parser(
         "run-full",
-        help="Convenience: run-batch at each --sizes entry, in order, for every listed model. "
-             "This is the single command meant to be launched once and left running unattended.",
+        help="Convenience: run-batch at each --sizes entry, in order, for every listed model, "
+             "then generate charts. This is the single command meant to be launched once and "
+             "left running unattended, covering phase1 -> train2 -> test2 -> train3 -> test3 "
+             "-> report -> charts for every model at every dataset size.",
     )
     p.add_argument("--models", required=True, help="Comma-separated model names.")
     p.add_argument("--sizes", default="50,500",
@@ -633,6 +632,7 @@ def build_parser():
     p.add_argument("--mode", default="adaptive", choices=["adaptive", "fixed"])
     p.add_argument("--both-modes", action="store_true")
     p.add_argument("--force", action="store_true")
+    p.add_argument("--no-charts", action="store_true", help="Skip chart generation at the end.")
     p.set_defaults(func=cmd_run_full)
 
     p = sub.add_parser(

@@ -115,3 +115,18 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+'''
+- remove the thinking mode testing altogether. even if the model has a thinking mode, we'll not use it
+- keep the original 6 metrics, remove the ones we added for thinking mode
+- train.py needs actual resume logic — load the last saved intermediate checkpoint's weights/optimizer state and continue from that step, rather than just skip-if-done. Right now that logic isn't there. This is a real code change, not just a storage config change. you add a --resume-from-checkpoint path that loads the latest intermediate checkpoint and picks the step counter back up.
+- a background loop that commits every N minutes regardless of pipeline state — simpler to bolt on, less precise about when it commits.
+- i'd want .gitignore already excluding checkpoints/
+- i want the code to first do phase 1 testing, then do phase 2 training, then phase 2 testing, then phase 3 training and then phase 3 testing. 
+- the timings file is getting very cluttered, if the model is skipped, no need to log it.  
+- remove the concept of "any_flagged_for_human_review"
+- remove existing traces of dry-run
+- If you're mid-run when you git commit, future reruns become hard to attribute correctly. Try to commit before kicking off a batch of runs, not after — keeps git_commit entries clean (no -dirty suffix) and trustworthy as your source of truth for "what code produced this."
+- i want the judge LLM to give a subjective opinion on how the model's performance is after each phase
+it should tell what went right and what went wrong, a small answer. 
+'''

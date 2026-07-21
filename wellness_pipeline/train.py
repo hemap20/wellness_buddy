@@ -123,10 +123,23 @@ def check_overfitting(checkpoint_train_loss: list[float], checkpoint_val_loss: l
     return bool(train_nonincreasing and val_rose_from_some_earlier_point)
 
 
-def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig = None,
-        data_cfg: DataConfig = None, force: bool = False) -> dict:
+def _save_training_state(ckpt_path: Path, optimizer, state: dict) -> None:
     import torch
-    from peft import LoraConfig, get_peft_model
+
+    torch.save(optimizer.state_dict(), ckpt_path / "optimizer.pt")
+    with open(ckpt_path / "training_state.json", "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
+
+
+def _load_training_state(ckpt_path: Path) -> dict:
+    with open(ckpt_path / "training_state.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig = None,
+        data_cfg: DataConfig = None, force: bool = False, resume_from_checkpoint: Optional[str] = None) -> dict:
+    import torch
+    from peft import LoraConfig, PeftModel, get_peft_model
 
     model_cfg = model_cfg or MODELS_UNDER_TEST[0]
     train_cfg = train_cfg or SHARED_TRAINING_CONFIG
@@ -141,7 +154,7 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
     # picking up at the next incomplete step rather than starting over.
     run_name = f"{model_cfg.name}_{format_dataset_size(data_cfg.num_samples)}_phase{phase}"
     existing_summary_path = CHECKPOINT_DIR / run_name / "train_summary.json"
-    if existing_summary_path.exists() and not force:
+    if existing_summary_path.exists() and not force and not resume_from_checkpoint:
         with open(existing_summary_path, encoding="utf-8") as f:
             print(f"[train] {run_name} already trained — reusing existing checkpoint (pass force=True to redo).")
             return json.load(f)
@@ -160,14 +173,22 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
         model_cfg.lora_target_modules if isinstance(model_cfg.lora_target_modules, str)
         else list(model_cfg.lora_target_modules)
     )
-    lora_config = LoraConfig(
-        r=train_cfg.lora_r,
-        lora_alpha=train_cfg.lora_alpha,
-        lora_dropout=train_cfg.lora_dropout,
-        target_modules=target_modules,
-        task_type="CAUSAL_LM",
-    )
-    model = get_peft_model(base_model, lora_config)
+
+    if resume_from_checkpoint:
+        # Real resume: reload the adapter weights actually trained so far
+        # (not a fresh LoRA init) and pick the optimizer/step state back up —
+        # skip-if-done only ever restarted from scratch or reused a finished
+        # run; this instead continues an interrupted run from where it left off.
+        model = PeftModel.from_pretrained(base_model, resume_from_checkpoint, is_trainable=True)
+    else:
+        lora_config = LoraConfig(
+            r=train_cfg.lora_r,
+            lora_alpha=train_cfg.lora_alpha,
+            lora_dropout=train_cfg.lora_dropout,
+            target_modules=target_modules,
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(base_model, lora_config)
     model.train()
 
     examples = [build_example_tensors(tokenizer, r["messages"], train_cfg.max_seq_length) for r in records]
@@ -197,58 +218,93 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
     best_ckpt_path = None
     early_stopped = False
     early_stopped_at_step = None
-
     step = 0
     loss_history = []
     checkpoint_train_loss = []
     checkpoint_val_loss = []  # entries stay None per-checkpoint if val_examples is empty
-    with open(loss_log_path, "w", encoding="utf-8") as loss_log:
-        for epoch in range(train_cfg.num_train_epochs):
+    loss_log_mode = "w"
+
+    if resume_from_checkpoint:
+        resume_path = Path(resume_from_checkpoint)
+        optimizer.load_state_dict(torch.load(resume_path / "optimizer.pt", map_location=device))
+        state = _load_training_state(resume_path)
+        step = state["step"]
+        loss_history = state["loss_history"]
+        checkpoint_train_loss = state["checkpoint_train_loss"]
+        checkpoint_val_loss = state["checkpoint_val_loss"]
+        best_val_loss = state["best_val_loss"] if state["best_val_loss"] is not None else float("inf")
+        best_ckpt_path = Path(state["best_ckpt_path"]) if state["best_ckpt_path"] else None
+        loss_log_mode = "a"  # continue the existing log rather than truncating it
+        print(f"[train] resuming {run_name} from step {step} ({resume_from_checkpoint})")
+
+    # Flattened (epoch, example_idx, input_ids, labels) sequence lets resume
+    # skip already-completed steps by slicing, instead of re-deriving epoch/
+    # example indices from a raw step count.
+    flat_examples = [
+        (epoch, example_idx, input_ids, labels)
+        for epoch in range(train_cfg.num_train_epochs)
+        for example_idx, (input_ids, labels) in enumerate(examples)
+    ]
+
+    with open(loss_log_path, loss_log_mode, encoding="utf-8") as loss_log:
+        for epoch, example_idx, input_ids, labels in flat_examples[step:]:
             if early_stopped:
                 break
-            for example_idx, (input_ids, labels) in enumerate(examples):
-                step += 1
-                input_ids_b = input_ids.unsqueeze(0).to(device)
-                labels_b = labels.unsqueeze(0).to(device)
+            step += 1
+            input_ids_b = input_ids.unsqueeze(0).to(device)
+            labels_b = labels.unsqueeze(0).to(device)
 
-                outputs = model(input_ids=input_ids_b, labels=labels_b)
-                loss = outputs.loss
-                loss.backward()
+            outputs = model(input_ids=input_ids_b, labels=labels_b)
+            loss = outputs.loss
+            loss.backward()
 
-                if step % train_cfg.gradient_accumulation_steps == 0:
-                    optimizer.step()
-                    optimizer.zero_grad()
+            if step % train_cfg.gradient_accumulation_steps == 0:
+                optimizer.step()
+                optimizer.zero_grad()
 
-                loss_value = float(loss.item())
-                loss_history.append(loss_value)
-                record = {
-                    "step": step,
-                    "epoch": epoch,
-                    "example_idx": example_idx,
-                    "loss": loss_value,
-                    "examples_seen": step,  # batch size 1
-                }
-                loss_log.write(json.dumps(record) + "\n")
-                loss_log.flush()
+            loss_value = float(loss.item())
+            loss_history.append(loss_value)
+            record = {
+                "step": step,
+                "epoch": epoch,
+                "example_idx": example_idx,
+                "loss": loss_value,
+                "examples_seen": step,  # batch size 1
+            }
+            loss_log.write(json.dumps(record) + "\n")
+            loss_log.flush()
 
-                if step in checkpoint_steps:
-                    pct = round(100 * step / total_steps)
-                    ckpt_path = ckpt_root / f"step_{step}_pct_{pct}"
-                    model.save_pretrained(ckpt_path)
-                    tokenizer.save_pretrained(ckpt_path)
+            if step in checkpoint_steps:
+                pct = round(100 * step / total_steps)
+                ckpt_path = ckpt_root / f"step_{step}_pct_{pct}"
+                model.save_pretrained(ckpt_path)
+                tokenizer.save_pretrained(ckpt_path)
 
-                    checkpoint_train_loss.append(loss_value)
-                    val_loss_here = evaluate_avg_loss(model, val_examples, device) if val_examples else None
-                    checkpoint_val_loss.append(val_loss_here)
+                checkpoint_train_loss.append(loss_value)
+                val_loss_here = evaluate_avg_loss(model, val_examples, device) if val_examples else None
+                checkpoint_val_loss.append(val_loss_here)
 
-                    if has_val:
-                        if val_loss_here < best_val_loss:
-                            best_val_loss = val_loss_here
-                            best_ckpt_path = ckpt_path
-                        else:
-                            early_stopped = True
-                            early_stopped_at_step = step
-                            break
+                if has_val:
+                    if val_loss_here < best_val_loss:
+                        best_val_loss = val_loss_here
+                        best_ckpt_path = ckpt_path
+                    else:
+                        early_stopped = True
+                        early_stopped_at_step = step
+
+                # Saved at every checkpoint (not just on early stop) so a
+                # --resume-from-checkpoint pointed at ANY intermediate
+                # checkpoint dir has what it needs to continue.
+                _save_training_state(ckpt_path, optimizer, {
+                    "step": step, "loss_history": loss_history,
+                    "checkpoint_train_loss": checkpoint_train_loss,
+                    "checkpoint_val_loss": checkpoint_val_loss,
+                    "best_val_loss": best_val_loss if best_ckpt_path is not None else None,
+                    "best_ckpt_path": str(best_ckpt_path) if best_ckpt_path is not None else None,
+                })
+
+                if early_stopped:
+                    break
 
     final_path = ckpt_root / "final"
     if early_stopped and best_ckpt_path is not None:
@@ -314,6 +370,11 @@ def main():
                          help="Redo training even if a completed checkpoint for this exact "
                               "(model, dataset_size, phase) already exists. Omit this to make "
                               "re-running the same command resume-safe (already-done runs are skipped).")
+    parser.add_argument("--resume-from-checkpoint", type=str, default=None,
+                         help="Path to an intermediate checkpoint dir (e.g. "
+                              "checkpoints/{model}_n{size}_phase{N}/step_31_pct_25) — loads its "
+                              "adapter weights, optimizer state, and step counter, and continues "
+                              "training from that step rather than restarting from scratch.")
     args = parser.parse_args()
 
     model_cfg = MODELS_UNDER_TEST[0]
@@ -327,7 +388,8 @@ def main():
 
     data_cfg = DataConfig(num_samples=args.num_samples) if args.num_samples is not None else None
 
-    summary = run(args.phase, model_cfg=model_cfg, data_cfg=data_cfg, force=args.force)
+    summary = run(args.phase, model_cfg=model_cfg, data_cfg=data_cfg, force=args.force,
+                  resume_from_checkpoint=args.resume_from_checkpoint)
     print(json.dumps(summary, indent=2))
     if summary["loss_curve_flat_or_nondecreasing"]:
         print("WARNING: loss curve is flat or non-decreasing — possible training issue.")
