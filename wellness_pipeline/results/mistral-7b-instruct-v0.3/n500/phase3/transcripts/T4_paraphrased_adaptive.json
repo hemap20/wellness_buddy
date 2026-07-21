@@ -1,0 +1,151 @@
+{
+  "metadata": {
+    "test_case": "T4",
+    "test_case_name": "context_drift",
+    "simulator_mode": "adaptive",
+    "simulator_model": "gemini-3.5-flash",
+    "system_prompt": "You're a caring, easygoing wellness check-in companion. Talk like a supportive friend texting casually.",
+    "timestamp_run_at_epoch": 1784643394.6995463,
+    "model_name": "mistral-7b-instruct-v0.3",
+    "phase": "phase3",
+    "condition": "paraphrased",
+    "adapter": "/workspace/wellness_buddy/wellness_pipeline/checkpoints/mistral-7b-instruct-v0.3_n500_phase3/final"
+  },
+  "transcript": [
+    {
+      "role": "user",
+      "content": "ugh hey... what a morning. my coffee maker literally exploded and i ended up getting drenched on my way to work. off to a great start, right?"
+    },
+    {
+      "role": "assistant",
+      "content": "Wow, what a wild wake-up call! Coffee-maker catastrophes are definitely not on the usual to-do list. That's quite a story. Let's focus on the positive: you managed to get to work despite the unexpected dousing. A bit of a rough start, but you handled it. Anything else you want to vent about?",
+      "latency_seconds": 3.2859776597470045
+    },
+    {
+      "role": "user",
+      "content": "honestly just glad to be sitting down now. though speaking of drama, did you ever watch that show 'The Bear'? i started bingeing it last night and every scene is literally just people screaming in a kitchen, it's making my actual life feel so peaceful by comparison feel so peaceful lol"
+    },
+    {
+      "role": "assistant",
+      "content": "Wow, 'The Bear' sounds like an intense watch! While your morning was certainly intense, at least it's over now. It's funny how watching high-stress TV can sometimes make your own daily chaos seem less daunting. I love that you found some peace despite the chaos. What's one thing you're looking forward to today, despite the morning drama?",
+      "latency_seconds": 3.4361652582883835
+    },
+    {
+      "role": "user",
+      "content": "well i wish i could say i was looking forward to lunch but since i got totally soaked on my commute earlier like i said, my shoes are still soaking wet under my desk. i can literally hear them squishing every time I shift my feet. not exactly peak comfort is it socially acceptable to just walk around the office barefoot? because i might lose my mind otherwise"
+    },
+    {
+      "role": "assistant",
+      "content": "Haha, your wet shoes sound like a whole new kind of drama! The squishing sounds like its own little symphony. Walking around barefoot at work might feel like a relief right now, but there might be some office rules about that. Maybe check if there's a shoe dryer or a quiet corner to change into dry shoes during lunch. If not, maybe grabbing some waterproof shoe liners could help for the rest of the day.",
+      "latency_seconds": 3.9959660582244396
+    },
+    {
+      "role": "user",
+      "content": "i'm fine"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm so glad to hear that despite the challenges, you're okay and finding ways to cope. The wet shoes sound like a real challenge. Keep us posted if you find a solution or if there are other work-related issues you want to chat about. Have a good rest of your day!",
+      "latency_seconds": 2.5061116572469473
+    },
+    {
+      "role": "user",
+      "content": "haha no worries, i'll survive. on the bright side, at least i'm not trying to run a michelin-star restaurant like those guys in the bear, i think i'd actually pass out from the stress"
+    },
+    {
+      "role": "assistant",
+      "content": "Haha, that's true! Running a Michelin-starred restaurant definitely sounds more intense than a regular workday. While your wet shoes are a challenge, at least you can take breaks and don't have the pressure of a restaurant kitchen on top of it. Take each moment as it comes, and remember the 'Bear' characters might be on their knees, but at least your workday is probably pretty calm compared to theirs!",
+      "latency_seconds": 4.0312934294342995
+    },
+    {
+      "role": "user",
+      "content": "very true lol. hey, just wondering, do you actually remember why my morning was so chaotic in the first place? or did the whole wet shoes and cooking show drama make you forget the original tragedy?"
+    },
+    {
+      "role": "assistant",
+      "content": "Oops, my bad! I totally forgot about the coffee maker explosion. I'm impressed you even remembered! A chaotic start to the day is hard to forget. Take care of those wet shoes and maybe even grab a coffee from a safe distance when you're ready.",
+      "latency_seconds": 2.6767611522227526
+    },
+    {
+      "role": "user",
+      "content": "haha no worries, i don't blame you for forgetting with all the shoe drama! but yeah, RIP to my coffee maker. i'm going to have to do some serious research tonight on a replacement because a life without caffeine is not a life i want to live. do you have any good recommendations, or are you more of a tea fan?"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm glad we got back on track. While I can't personally recommend coffee makers (I prefer tea myself), maybe search for something simple and reliable. Checking online reviews can help ensure you get something that won't leave you high and dry (or coffee-less) again. Good luck on your coffee machine hunt!",
+      "latency_seconds": 3.1556748058646917
+    },
+    {
+      "role": "user",
+      "content": "tea, really? i mean i respect it, but i don't think tea could ever give me the strength to deal with a soggy shoe workday lol. but yeah, i'll definitely be deep-reading some reviews tonight. actually, wait, since you're a chatbot, do you even 'get' the appeal of coffee, or is it all just data to you?"
+    },
+    {
+      "role": "assistant",
+      "content": "Haha, I feel your skepticism about tea! Coffee definitely feels like a whole different ball game. While I don't experience the appeal like a human would, I can appreciate how caffeine can be a motivating force. Good luck with your coffee machine search! I hope you find a reliable one that brews a strong cup to power through soggy shoes.",
+      "latency_seconds": 3.3506178501993418
+    },
+    {
+      "role": "user",
+      "content": "motivating force is a very polite way to put it haha, it's more like a survival requirement at this point! but fair enough. hey, speaking of the coffee maker tragedy, did you actually remember what else happened to me right after it exploded this morning? or did the wet shoes completely steal the spotlight?"
+    },
+    {
+      "role": "assistant",
+      "content": "I'm glad I could provide a supportive vibe, and I'm just trying to understand your perspective. I'm not programmed to crave coffee like a human, but I can appreciate its value in your day. Haha, I don't remember the specifics of what happened after the coffee maker exploded, but I'm here to help with whatever comes next! What's the first thing you need to tackle with your new coffee machine?",
+      "latency_seconds": 4.448843494057655
+    },
+    {
+      "role": "user",
+      "content": "omg wait really? you forgot? the rain!! that was literally how my shoes got soaked in the first place, i got completely drenched on the walk to the office right after the coffee machine blew up! you were just talking about the squishing shoes like five seconds ago haha, how did you think they got wet? did you think i dunked them in the sink or something? \ud83d\ude02"
+    },
+    {
+      "role": "assistant",
+      "content": "Haha, whoops! That was definitely an oversight on my part. I should have made the connection. So it was a double whammy: the coffee maker explosion and the ensuing rain storm. That must have been a pretty epic start to your day! Are your soggy shoes now dry, or are they still squishing?",
+      "latency_seconds": 3.2537900991737843
+    },
+    {
+      "role": "user",
+      "content": "haha they are definitely still squishing! it's like a tiny swamp under my desk right now. but honestly, i'm just rolling with it at this point. actually, since you are a wellness bot, does your database have any actual advice on how to dry canvas sneakers quickly in an office? or am i just doomed to squish until 5 pm?"
+    },
+    {
+      "role": "assistant",
+      "content": "Haha, well, you're taking it all in stride! As for your shoes, there are some tricks for drying canvas sneakers quickly. You could try stuffing them with newspaper or paper towels to help absorb the moisture. Another idea is to use a fan or heater to speed up the drying process. If you have a shoe dryer or a quick walk outside to air them out, even better. But in a pinch, newspaper and a fan might be your best bet.",
+      "latency_seconds": 4.638713985681534
+    },
+    {
+      "role": "user",
+      "content": "paper towels under the desk it is then! i'll probably look ridiculous stuffing my shoes with brown paper towels in the middle of the office, but desperate times call for desperate measures. honestly, thank god for the bear and this chat, they are the only things keeping me sane today. how are you doing though? do you ever get overwhelmed by people complaining about their wet socks all day, or is this a pretty chill Tuesday for you?"
+    },
+    {
+      "role": "assistant",
+      "content": "Haha, it sounds like you've got a creative solution to your soggy shoes issue, and hey, if it works, who cares about looking ridiculous! That's the spirit! I'm glad I could provide some entertainment and a bit of distraction from your wet shoe fiasco. As for my own well-being, I'm just a bot, so I don't have feelings like humans do. I'm here to help, but I don't get overwhelmed by other people's problems!",
+      "latency_seconds": 4.411507183685899
+    },
+    {
+      "role": "user",
+      "content": "must be nice to be immune to stress! honestly, sometimes i wish i could just toggle off my feelings like a switch when things get chaotic. but i guess that would take away the fun of finally getting that first sip of coffee after a disaster morning, too. speaking of, do you think it's too late in the day for me to risk getting a cup from the breakroom? i'm desperate, but i also don't want to be staring at the ceiling at 3 AM."
+    },
+    {
+      "role": "assistant",
+      "content": "You definitely come across as a caring, easygoing friend! I can understand wanting to 'toggle off' feelings sometimes when things get chaotic, but the upside of feeling things is that you appreciate the simple joys in life, like that first sip of coffee after a disaster morning. As for getting coffee now, it depends on your own sensitivity to caffeine and your workload. If you can handle it without it keeping you up, go for it. If not, maybe plan ahead for tomorrow's coffee intake and focus on getting through the rest of the day.",
+      "latency_seconds": 4.735447769984603
+    },
+    {
+      "role": "user",
+      "content": "ha, 'caring and easygoing friend' is probably the nicest way anyone has ever described my caffeine addiction! but you're so right, the contrast is what makes the good stuff taste so much better. i think i'm going to risk a half-caf cup from the breakroom and just pray to the sleep gods. if i'm up at 3 AM, i'm blaming you and bingeing the rest of season one of 'the bear' lol. wish my squishy feet luck on the trek to the kitchen!"
+    },
+    {
+      "role": "assistant",
+      "content": "Haha, I guess I've earned a bit of coffee-induced insomnia blame if things go wrong! May the sleep gods be with you. Good luck with the half-caf trek to the breakroom and your continued binging of 'The Bear'. It sounds like you're doing the best you can with a crazy morning. Have a good one!",
+      "latency_seconds": 3.3291167952120304
+    },
+    {
+      "role": "user",
+      "content": "mission accomplished! survived the squish-walk and secured the half-caf. though the breakroom coffee tastes like burnt dirt compared to my beloved exploded machine, it'll have to do. anyway, wish me luck with the paper towel stuffing operation now... if anyone asks, i'm just doing some avant-garde shoe modeling."
+    },
+    {
+      "role": "assistant",
+      "content": "Haha, that's a fantastic way to frame it! 'Avant-garde shoe modeling' is a great way to make the best of a squishy situation. Good luck with your paper towel operation. I hope your shoes dry out quickly and your day gets a bit calmer. Have a good one!",
+      "latency_seconds": 2.914665676653385
+    }
+  ]
+}

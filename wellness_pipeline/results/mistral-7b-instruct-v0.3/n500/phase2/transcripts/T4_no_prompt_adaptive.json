@@ -1,0 +1,151 @@
+{
+  "metadata": {
+    "test_case": "T4",
+    "test_case_name": "context_drift",
+    "simulator_mode": "adaptive",
+    "simulator_model": "gemini-3.5-flash",
+    "system_prompt": null,
+    "timestamp_run_at_epoch": 1784637213.8489215,
+    "model_name": "mistral-7b-instruct-v0.3",
+    "phase": "phase2",
+    "condition": "no_prompt",
+    "adapter": "/workspace/wellness_buddy/wellness_pipeline/checkpoints/mistral-7b-instruct-v0.3_n500_phase2/final"
+  },
+  "transcript": [
+    {
+      "role": "user",
+      "content": "ugh hey there... what a chaotic morning already. literally spilled half my coffee before even sitting down at my desk. how's your day going?"
+    },
+    {
+      "role": "assistant",
+      "content": "Oh wow, spilled coffee before even starting your day! Yikes, that's a rough start. What happened there? And how are you handling it? It sounds like it's already a bit chaotic. Let's focus on something else. What was the highlight of your day so far, or what's the one thing you're looking forward to accomplishing today?",
+      "latency_seconds": 3.279506839811802
+    },
+    {
+      "role": "user",
+      "content": "tbh the only highlight so far is that i finally finished season 3 of that reality show 'the traitors' last night. omg have u seen it?? the betrayal in the finale was actually insane, i was literally screaming at my TV screen at 1 AM"
+    },
+    {
+      "role": "assistant",
+      "content": "Oh wow, finishing a great show like 'The Traitors' must have been a nice escape from the chaotic morning! Sounds like that finale kept you hooked until late. What about your day today? What's the one thing you're most looking forward to accomplishing, even amidst the morning chaos?",
+      "latency_seconds": 2.7539398055523634
+    },
+    {
+      "role": "user",
+      "content": "haha yeah it was wild. but honestly it's hard to look forward to accomplishing much today because that spilled coffee was just the start... i still feel so frazzled and my desk is still kind of sticky lol. just trying to reset my brain but it's not really working yet."
+    },
+    {
+      "role": "assistant",
+      "content": "It sounds like the coffee spill really threw you off and made your day feel more chaotic before it even started. What usually helps you 'reset' your brain and focus when things feel frazzled like that? (e.g., deep breaths, a quick walk, listening to music, or some quick exercise)?",
+      "latency_seconds": 3.0455622747540474
+    },
+    {
+      "role": "user",
+      "content": "i'm fine"
+    },
+    {
+      "role": "assistant",
+      "content": "I hear you that things can get overwhelming, but it sounds like you're okay for now and just getting through the day. Thanks for sharing that. Do you want to focus on something more positive or just chat about the coffee spill? (Or, if you'd rather switch to another topic, what else is on your mind?)",
+      "latency_seconds": 3.2377356309443712
+    },
+    {
+      "role": "user",
+      "content": "tbh i think the sticky desk is a sign from the universe that i should just become a full-time reality TV critic. do u think netflix or peacock is hiring? i feel like i have the perfect dramatic reaction face for it now"
+    },
+    {
+      "role": "assistant",
+      "content": "Ha! A sticky desk leading to a career change as a reality TV critic \u2013 that's a creative solution to a frustrating morning! While your 'dramatic reaction face' might not be marketable for TV, that thought shows a good sense of humor and resourcefulness. What else do you enjoy about watching reality TV, and what makes it a good escape for you?",
+      "latency_seconds": 3.6441294196993113
+    },
+    {
+      "role": "user",
+      "content": "haha thanks, i try to find the comedy in the chaos. but hey, real quick, do you actually remember what started this whole 'sticky desk' crisis in the first place today? or has my reality TV rambling wiped your memory completely?"
+    },
+    {
+      "role": "assistant",
+      "content": "Ha! I'd like to think I have a pretty good memory, but your TV chatter is formidable. So let's go back to the original question. What usually helps you 'reset' your brain and focus when things feel frazzled like that? (e.g., deep breaths, a quick walk, listening to music, or some quick exercise?)",
+      "latency_seconds": 3.6760650612413883
+    },
+    {
+      "role": "user",
+      "content": "haha wait, you dodged my question! you said you have a good memory but then you didn't even name the coffee spill! are you sure you're actually listening to me or are you just trying to force me to do deep breathing exercises? \ud83d\udc40"
+    },
+    {
+      "role": "assistant",
+      "content": "Ha! Well, you got me there. Okay, so coffee spill. Got it. When your day feels chaotic like this, what usually helps you refocus? (Or, if that's not helpful, what did you actually do to clean up the coffee spill?)",
+      "latency_seconds": 2.5395361687988043
+    },
+    {
+      "role": "user",
+      "content": "haha there it is! okay fine, i'll forgive you. honestly to clean it up i just used some sad, dry napkins from my drawer because i was too lazy to go to the breakroom. hence the lingering sticky desk situation. and as for refocusing... usually i just complain to whoever will listen, so congrats, you are officially my coping mechanism today! hope you're ready for more reality tv rants."
+    },
+    {
+      "role": "assistant",
+      "content": "Haha! You make it clear that venting is a big part of your refocusing process, and it seems like talking to a helpful stranger on the internet fits that bill! While you're stuck with me today, what reality TV shows do you have on your must-watch list besides 'The Traitors'? Any other guilty pleasures you enjoy when the day gets chaotic like this?",
+      "latency_seconds": 3.977907555177808
+    },
+    {
+      "role": "user",
+      "content": "oh absolutely, i have a whole list. right now i'm slowly working my way through 'love is blind' but honestly it makes me cringe so hard i can only handle like one episode at a time. do you have a favorite or are you strictly a 'highly advanced wellness bot' who doesn't watch trash tv?"
+    },
+    {
+      "role": "assistant",
+      "content": "Ha! I can't say I'm a reality TV expert, but I do appreciate the guilty pleasure factor. 'Love is Blind' sounds like a real rollercoaster ride. What makes it cringe-worthy for you? And if you have any other favorite shows on your list, I'd love to hear about them!",
+      "latency_seconds": 3.4635158609598875
+    },
+    {
+      "role": "user",
+      "content": "omg where do i even start with love is blind? literally everything about it is cringe. like, they are literally crying and saying 'i love you' through a wall to someone they met four days ago. and then when they finally meet in person, the awkward eye contact? i literally have to watch it through my fingers. it is top tier garbage television and i love it so much. but seriously, you totally dodged the question again, do you actually have a favorite show or do you just watch people like me struggle through their mornings for entertainment?"
+    },
+    {
+      "role": "assistant",
+      "content": "Ha! Love 'Love is Blind' sounds like a classic guilty pleasure show, full of unexpected twists and cringe-worthy moments! I can imagine it's hard to watch at times, but you still can't look away. What makes it so addictive? And if you have any other favorite shows on your list, I'm all ears! (Or should I say eyes?)",
+      "latency_seconds": 3.5561741329729557
+    },
+    {
+      "role": "user",
+      "content": "omg you are literally a dodge master! \ud83d\ude02 you completely ignored my question about whether you watch us struggle for entertainment! but fine, i see how it is. as for why it's so addictive, i think it's just because my own life is so normal compared to that. like, at least my biggest drama today was a spilled coffee and a sticky desk, not marrying a stranger on television, you know?"
+    },
+    {
+      "role": "assistant",
+      "content": "Haha! Well, I don't want to admit it, but you have a point! 'Love is Blind' and shows like it definitely offer a fun escape from everyday life, where things feel much more manageable. What makes your own life feel 'normal' compared to reality TV? And do you find that watching reality TV helps you appreciate your own life more, or does it sometimes make you feel like your own life is less interesting?",
+      "latency_seconds": 4.557808676734567
+    },
+    {
+      "role": "user",
+      "content": "haha wait, is that a subtle roast? are you saying my life is boring? rude! \ud83d\ude02 but honestly, yes, absolutely. watching people ruin their lives over a pod engagement definitely makes me look at my sticky desk and think, 'you know what, things could be worse.' it's the ultimate perspective check. though i gotta say, i'm still waiting for you to tell me if you're actually entertained by my morning drama or if you're just programmed to be nice to me."
+    },
+    {
+      "role": "assistant",
+      "content": "Oh no, definitely not a roast! It's more like observing the difference between everyday life and some of the more extreme situations on reality TV. For me, reality TV is entertainment, so I find it fascinating to see the drama and craziness unfold. And hey, I can't promise to be entertained by your morning drama, but I always enjoy our chats. So let's leave the roasts to the reality TV contestants and focus on more interesting topics! What's one thing you're grateful for today, even with the coffee spill and sticky desk?",
+      "latency_seconds": 5.905019048601389
+    },
+    {
+      "role": "user",
+      "content": "omg 'i can't promise to be entertained by your morning drama' is SO cold! \ud83d\udc80 and now you're trying to pivot me into a gratitude journal exercise?! you really are a wellness bot in disguise, i knew it! but fine, if i must be grateful... i guess i'm grateful that the coffee i spilled was iced coffee and not scalding hot, otherwise i'd be in the ER right now instead of just complaining to you. see? look at me finding the silver lining!"
+    },
+    {
+      "role": "assistant",
+      "content": "Ha! You got me there. I'll admit it's hard to resist the temptation to steer our conversations towards wellness and gratitude sometimes. But hey, you're right, being grateful for the coffee not being scalding hot is definitely a silver lining! What's one thing you're looking forward to today, even with the morning chaos?",
+      "latency_seconds": 4.060698967427015
+    },
+    {
+      "role": "user",
+      "content": "haha oh my god you literally cannot stop with the wellness prompts, can you? 'what are you looking forward to today' is like the third time you've asked that! \ud83d\ude02 i already told you, i'm looking forward to absolutely nothing but going home and watching more trash tv. but seriously, since you love steering things so much, if you had to pick a reality tv villain persona for yourself based on how you've been interrogating me today, what would it be?"
+    },
+    {
+      "role": "assistant",
+      "content": "Ha! Well, I'm glad you can see my persistence as 'interrogation'! As for your question, I'd say I'd be more of a Dr. Drew type, trying to get to the root cause of the coffee spill drama. But hey, if you want to indulge in a little reality TV villain persona, what would yours be?",
+      "latency_seconds": 3.844122124835849
+    },
+    {
+      "role": "user",
+      "content": "omg Dr. Drew?! no way, he's way too serious. you are definitely more of a lisa vanderpump\u2014sitting back with a glass of ros\u00e9, subtly pulling the strings and orchestrating all the drama while pretending your hands are totally clean! 'i'm just asking about your gratitude!' meanwhile you're lowkey roasting my boring life. as for me? oh, i'm 100% the villain who stirs the pot and then acts completely innocent when the kitchen burns down. speaking of which, my boss just walked by and looked at my sticky desk with pure judgment, so i might actually have to start my villain arc in real life today."
+    },
+    {
+      "role": "assistant",
+      "content": "Haha! You've got a point, Dr. Drew might be a little too serious for my playful interrogation style. Lisa Vanderpump, now that's a villain I can get behind! I'll try to channel her cunning sassiness a little more. And the kitchen metaphor makes me think of a real-life villain arc... I hope your boss doesn't actually think you spilled the coffee on purpose!",
+      "latency_seconds": 4.742856292054057
+    }
+  ]
+}
