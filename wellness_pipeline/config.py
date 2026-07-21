@@ -86,7 +86,7 @@ class ModelUnderTest:
     # simple "User: ... \nBot: ..." format when tokenizer.chat_template is None.
     trust_remote_code: bool = False
     max_new_tokens: int = 128
-    device: str = "mps"  # "auto" | "cpu" | "cuda" | "mps"
+    device: str = "auto"  # "auto" | "cpu" | "cuda" | "mps"
     # LoRA target_modules names the actual attention projection layers to
     # adapt — this is architecture, not a tunable hyperparameter, so it lives
     # per-model rather than in the shared TrainingConfig below (every other
@@ -108,7 +108,7 @@ MODELS_UNDER_TEST = [
         name="gemma-3-1b-it",
         hf_model_id="google/gemma-3-1b-it",
         max_new_tokens=128,
-        device="mps",
+        device="auto",
         # Gemma 3 uses the standard Llama-style attention projection names —
         # verified against the public transformers Gemma3Attention source,
         # NOT loaded/confirmed live here (the repo is gated — see `gated`
@@ -128,7 +128,7 @@ MODELS_UNDER_TEST = [
         name="gemma-4-e2b-it",
         hf_model_id="google/gemma-4-E2B-it",
         max_new_tokens=128,
-        device="mps",
+        device="auto",
         # NOTE: bare names ("q_proj", "k_proj", "v_proj", "o_proj") are NOT
         # enough here — PEFT matches target_modules by name across the
         # ENTIRE model, and Gemma4ForConditionalGeneration is multimodal: its
@@ -149,7 +149,7 @@ MODELS_UNDER_TEST = [
         name="starling-lm-7b-alpha",
         hf_model_id="berkeley-nest/Starling-LM-7B-alpha",
         max_new_tokens=128,
-        device="mps",
+        device="auto",
         # Verified live via AutoConfig: model_type="mistral", text-only
         # (no vision/audio tower), standard Llama-family attention naming —
         # bare names are safe here, no path-scoped regex needed (unlike
@@ -162,7 +162,7 @@ MODELS_UNDER_TEST = [
         name="empathetic-qwen3-8b-jan",
         hf_model_id="Someet24/empathetic-qwen3-8b-Jan",
         max_new_tokens=128,
-        device="mps",
+        device="auto",
         # Verified live via AutoConfig: model_type="qwen3", text-only,
         # natively supported by transformers (no trust_remote_code needed).
         # 8B params on 24GB unified RAM is tight even at bf16 (~16GB weights
@@ -177,7 +177,7 @@ MODELS_UNDER_TEST = [
         name="qwen3-8b",
         hf_model_id="Qwen/Qwen3-8B",
         max_new_tokens=128,
-        device="mps",
+        device="auto",
         # Base (non-fine-tuned) counterpart to empathetic-qwen3-8b-jan above —
         # same architecture, verified live via AutoConfig (model_type="qwen3").
         lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
@@ -188,7 +188,7 @@ MODELS_UNDER_TEST = [
         name="mistral-7b-instruct-v0.3",
         hf_model_id="mistralai/Mistral-7B-Instruct-v0.3",
         max_new_tokens=128,
-        device="mps",
+        device="auto",
         lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
         torch_dtype="bfloat16",
         gated=True,  # gated repo; access already approved for the configured HF_TOKEN
@@ -197,7 +197,7 @@ MODELS_UNDER_TEST = [
         name="llama-3-8b",
         hf_model_id="meta-llama/Meta-Llama-3-8B",
         max_new_tokens=128,
-        device="mps",
+        device="auto",
         # Same standard Llama attention naming as the other non-gemma models
         # above — no known multimodal collision risk for this architecture.
         lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),

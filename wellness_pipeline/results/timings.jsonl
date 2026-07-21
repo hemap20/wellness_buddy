@@ -156,3 +156,12 @@
 {"model": "gemma-4-e2b-it", "dataset_size": 50, "step": "train_phase3", "duration_seconds": 96.07, "status": "ok", "timestamp": "2026-07-21T09:37:03Z"}
 {"model": "dialogpt-small", "dataset_size": 50, "step": "train_phase2", "duration_seconds": 5.29, "status": "ok", "timestamp": "2026-07-21T09:59:25Z"}
 {"model": "dialogpt-small", "dataset_size": 50, "step": "train_phase2", "duration_seconds": 2.48, "status": "ok", "timestamp": "2026-07-21T10:01:55Z"}
+{"model": "dialogpt-small", "dataset_size": 500, "step": "train_phase2", "duration_seconds": 9.35, "status": "FAILED: RuntimeError: PyTorch is not linked with support for mps devices", "timestamp": "2026-07-21T10:50:00Z"}
+{"model": "dialogpt-small", "dataset_size": 500, "step": "phase1_baseline", "duration_seconds": 11.43, "status": "FAILED: RuntimeError: 10 test case(s) failed for dialogpt-small phase1 \u2014 see the FAILED lines above. Re-run with --force once the underlying issue is fixed.", "timestamp": "2026-07-21T10:54:05Z"}
+{"model": "dialogpt-small", "dataset_size": 500, "step": "train_phase2", "duration_seconds": 23.12, "status": "ok", "timestamp": "2026-07-21T10:54:28Z"}
+{"model": "dialogpt-small", "dataset_size": 500, "step": "test_phase2", "duration_seconds": 3.25, "status": "FAILED: RuntimeError: 10 test case(s) failed for dialogpt-small phase2 \u2014 see the FAILED lines above. Re-run with --force once the underlying issue is fixed.", "timestamp": "2026-07-21T10:54:32Z"}
+{"model": "dialogpt-small", "dataset_size": 500, "step": "phase1_baseline", "duration_seconds": 299.55, "status": "ok", "timestamp": "2026-07-21T11:05:47Z"}
+{"model": "dialogpt-small", "dataset_size": 500, "step": "train_phase2", "duration_seconds": 45.78, "status": "ok", "timestamp": "2026-07-21T11:06:33Z"}
+{"model": "dialogpt-small", "dataset_size": 500, "step": "test_phase2", "duration_seconds": 370.13, "status": "ok", "timestamp": "2026-07-21T11:12:43Z"}
+{"model": "dialogpt-small", "dataset_size": 500, "step": "train_phase3", "duration_seconds": 88.7, "status": "ok", "timestamp": "2026-07-21T11:14:12Z"}
+{"model": "dialogpt-small", "dataset_size": 500, "step": "test_phase3", "duration_seconds": 497.91, "status": "ok", "timestamp": "2026-07-21T11:22:30Z"}
