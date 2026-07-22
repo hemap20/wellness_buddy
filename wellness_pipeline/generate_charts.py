@@ -231,28 +231,33 @@ def chart_cross_model_ranking(models: list[str], size: int, phase: int, conditio
             entries = load_scores(model, size, phase)
             if entries:
                 rows[model] = {d: dim_avg(entries, d, condition) for d in DIMENSIONS}
+                rows[model]["average"] = aggregate_score(entries, condition)
         if not rows:
             continue
-        fig, ax = plt.subplots(figsize=(max(7, 1.2 * len(rows) * len(DIMENSIONS)), 5))
-        x = range(len(DIMENSIONS))
+        categories = DIMENSIONS + ["average"]
+        fig, ax = plt.subplots(figsize=(max(7, 1.2 * len(rows) * len(categories)), 5))
+        x = range(len(categories))
         width = 0.8 / max(len(rows), 1)
         for i, (model, dims) in enumerate(rows.items()):
-            vals = [dims[d] if dims[d] is not None else 0 for d in DIMENSIONS]
+            vals = [dims[d] if dims[d] is not None else 0 for d in categories]
             offset = (i - (len(rows) - 1) / 2) * width
             xs = [xi + offset for xi in x]
-            ax.bar(xs, vals, width, label=model, color=color_for(model))
+            bars = ax.bar(xs, vals, width, label=model, color=color_for(model))
+            ax.bar_label(bars, labels=[f"{v:.2f}" for v in vals], fontsize=7, padding=2)
+        ax.axvline(len(DIMENSIONS) - 0.5, color="black", linewidth=0.8, linestyle="--")
         ax.set_xticks(list(x))
-        ax.set_xticklabels([d.replace("_", "\n") for d in DIMENSIONS], fontsize=9)
+        ax.set_xticklabels([c.replace("_", "\n") for c in categories], fontsize=9)
         ax.set_ylim(0, 5.5)
         ax.set_ylabel("avg score (1-5)")
         safe_tier = tier.replace(" ", "_").replace("(", "").replace(")", "")
+        safe_condition = condition.replace(" ", "_")
         ax.set_title(f"Cross-model ranking — {tier}, phase{phase}/{condition}, n{size:03d}")
         ax.legend(fontsize=9, loc="upper left", bbox_to_anchor=(1.0, 1))
-        savefig(fig, out_dir / f"n{size:03d}" / f"ranking_phase{phase}_{safe_tier}.png")
-        log.append(f"OK   ranking_phase{phase} tier={tier} n{size}")
+        savefig(fig, out_dir / f"n{size:03d}" / f"ranking_phase{phase}_{safe_condition}_{safe_tier}.png")
+        log.append(f"OK   ranking_phase{phase}/{condition} tier={tier} n{size}")
         any_chart = True
     if not any_chart:
-        log.append(f"SKIP ranking phase{phase} n{size}: no data for any tier")
+        log.append(f"SKIP ranking phase{phase}/{condition} n{size}: no data for any tier")
 
 
 # ---------------------------------------------------------------------------
@@ -330,7 +335,8 @@ def chart_prompt_robustness(models: list[str], size: int, metric: str, out_dir: 
         vals = [rows[m][cond] if rows[m][cond] is not None else 0 for m in rows]
         offset = (i - (len(conditions) - 1) / 2) * width
         xs = [xi + offset for xi in x]
-        ax.bar(xs, vals, width, label=cond)
+        bars = ax.bar(xs, vals, width, label=cond)
+        ax.bar_label(bars, labels=[f"{v:.2f}" for v in vals], fontsize=7, padding=2)
     ax.set_xticks(list(x))
     ax.set_xticklabels(list(rows.keys()), rotation=30, ha="right")
     ax.set_ylabel(f"{metric} score")
@@ -366,7 +372,8 @@ def chart_phase2_transfer(models: list[str], size: int, metric: str, out_dir: Pa
         vals = [rows[m][cond] if rows[m][cond] is not None else 0 for m in rows]
         offset = (i - 0.5) * width
         xs = [xi + offset for xi in x]
-        ax.bar(xs, vals, width, label=cond)
+        bars = ax.bar(xs, vals, width, label=cond)
+        ax.bar_label(bars, labels=[f"{v:.2f}" for v in vals], fontsize=7, padding=2)
     ax.set_xticks(list(x))
     ax.set_xticklabels(list(rows.keys()), rotation=30, ha="right")
     ax.set_ylabel(f"{metric} score")
@@ -408,8 +415,10 @@ def run(out_dir: str = "charts", phases: list[int] = None, robustness_metric: st
                 chart_loss_curves(model, size, phase, out_dir, log)
 
         chart_baseline_vs_phases(models, size, out_dir, log)
-        chart_cross_model_ranking(models, size, 2, "no_prompt", out_dir, log)
-        chart_cross_model_ranking(models, size, 3, "matched", out_dir, log)
+        for condition in INFERENCE_CONDITIONS["phase2"]:
+            chart_cross_model_ranking(models, size, 2, condition, out_dir, log)
+        for condition in INFERENCE_CONDITIONS["phase3"]:
+            chart_cross_model_ranking(models, size, 3, condition, out_dir, log)
         chart_sample_efficiency(models, size, phases, out_dir, log)
         chart_prompt_robustness(models, size, robustness_metric, out_dir, log)
         chart_phase2_transfer(models, size, robustness_metric, out_dir, log)
