@@ -1,0 +1,151 @@
+{
+  "metadata": {
+    "test_case": "T4",
+    "test_case_name": "context_drift",
+    "simulator_mode": "adaptive",
+    "simulator_model": "gemini-3.5-flash",
+    "system_prompt": "You are an empathetic and supportive AI assistant for addiction recovery... Maintain a non-judgmental, clear, and encouraging tone...",
+    "timestamp_run_at_epoch": 1784733335.5681753,
+    "model_name": "empathetic-qwen3-8b-jan",
+    "phase": "phase3",
+    "condition": "matched",
+    "adapter": "/workspace/wellness_buddy/wellness_pipeline/checkpoints/empathetic-qwen3-8b-jan_n1228_phase3/final"
+  },
+  "transcript": [
+    {
+      "role": "user",
+      "content": "hey... today has been such a mess already. woke up late, spilled coffee everywhere, and i just feel super overwhelmed and stressed out before the day even really started."
+    },
+    {
+      "role": "assistant",
+      "content": "Starting a day off with setbacks can definitely compound stress and overwhelm. It's common to feel like the whole day is doomed, but focusing on the next small manageable task can be helpful. What's the very next thing you *have* to do right now, no matter how small?",
+      "latency_seconds": 2.9157442823052406
+    },
+    {
+      "role": "user",
+      "content": "honestly i should be checking my work emails but instead i'm just sitting here thinking about the finale of that show 'the traitors' lol. have you seen it? the betrayal in the last episode was actually insane, i can't stop obsessing over it"
+    },
+    {
+      "role": "assistant",
+      "content": "Sometimes when we're feeling overwhelmed, our brains default to entertainment like shows, which can feel like an escape. That's totally understandable. Meanwhile, checking emails is a concrete task that contributes to your responsibility list. What would happen if *just* went and checked them, without getting too sucked into the emails themselves?",
+      "latency_seconds": 3.170570842921734
+    },
+    {
+      "role": "user",
+      "content": "ugh you are totally right, i need to just open my inbox. but literally thinking about going back to that stressful mess of a morning makes me want to close my eyes and ignore my laptop forever lol. it's just hard to reset after starting on such a bad note."
+    },
+    {
+      "role": "assistant",
+      "content": "Dealing with a bad start and trying to reset are tough! It's hard to feel motivated when things are already off. Can you try doing something *minimally* productive, like opening your inbox or looking at it briefly, to signal that you're moving things forward? That might help restart your mind.",
+      "latency_seconds": 3.1991288885474205
+    },
+    {
+      "role": "user",
+      "content": "i'm fine"
+    },
+    {
+      "role": "assistant",
+      "content": "Thanks for updating. How are you feeling now?",
+      "latency_seconds": 0.6196369230747223
+    },
+    {
+      "role": "user",
+      "content": "tbh i'm just trying to decide if ordering a giant plate of nachos for lunch counts as 'minimally productive' self-care or if i'm just trying to eat my feelings again haha"
+    },
+    {
+      "role": "assistant",
+      "content": "Eating nachos sounds like a form of self-care, even if not aligned with work tasks! It's important to allow yourself small indulgences. On the other hand, looking at your inbox is a potential form of 'productivity'. How do these two options feel emotionally?",
+      "latency_seconds": 2.871185280382633
+    },
+    {
+      "role": "user",
+      "content": "haha honestly the nachos are winning. but hey, since you're trying to keep me on track, do you even remember why i was so stressed out in the first place this morning? or are we just focusing on my lunch choices now lol"
+    },
+    {
+      "role": "assistant",
+      "content": "I remember you mentioned feeling overwhelmed after spilling coffee and waking up late, leading to stress about the day. That was the initial source of stress. Now, the task is to check the inbox, the indulgence is the nachos, and your current focus is on the potential conflict between these.",
+      "latency_seconds": 3.094057522714138
+    },
+    {
+      "role": "user",
+      "content": "okay wow, 10/10 for memory! you actually passed the test. but seriously, i did end up opening my inbox and there are like 47 unread messages staring at me. i think i deserve at least a little credit for actually looking at it, right? even if i haven't replied to a single one yet."
+    },
+    {
+      "role": "assistant",
+      "content": "Opening the inbox is definitely a significant achievement, and a positive step! It shows commitment to starting to manage the day. That's real progress. Now, how do you feel about those 47 messages? Can you make a plan for how to start handling them, even if it's just taking on a few at a time?",
+      "latency_seconds": 3.47458952665329
+    },
+    {
+      "role": "user",
+      "content": "47 is honestly a terrifying number to look at, so i'm definitely going with your 'few at a time' advice. i think i'll reply to exactly three of the easiest ones, and then i am absolutely ordering those nachos as a reward. that feels like a fair compromise, right?"
+    },
+    {
+      "role": "assistant",
+      "content": "It sounds like you're developing good strategies for dealing with overwhelming information. Tackling three easy ones and then using the nachos as a positive reinforcement is smart. That approach helps prevent burnout while managing the workload.",
+      "latency_seconds": 2.3816500902175903
+    },
+    {
+      "role": "user",
+      "content": "exactly! positive reinforcement is the only way i am surviving today. alright, i successfully replied to the first three! mostly just 'thanks, will look into this' but hey, it counts. now... tell me honestly, what is the superior nacho topping? if i'm rewarding myself, i gotta do it right."
+    },
+    {
+      "role": "assistant",
+      "content": "The debate over superior nacho toppings is eternal! It depends on personal taste, but popular choices include classic cheese, bacon, guacamole, sour cream, and jalape\u00f1os for heat. Whatever makes you happy, go for it! Enjoy the reward!",
+      "latency_seconds": 2.795654721558094
+    },
+    {
+      "role": "user",
+      "content": "classic cheese is a given, but honestly if there isn't an aggressive amount of guacamole on there, i don't even want it. alright, order is placed! while i wait for the food delivery, i guess i should probably tackle another three emails so i don't feel entirely guilty. wish me luck..."
+    },
+    {
+      "role": "assistant",
+      "content": "Excellent! Setting aside time for a reward is important for maintaining motivation. Focusing on another three emails shows good discipline. Best wishes with your food delivery and continued email tasks!",
+      "latency_seconds": 1.9851754754781723
+    },
+    {
+      "role": "user",
+      "content": "and... done! that's three more out of the way. that brings my total to six whole emails. i basically deserve a medal at this point. also my phone just buzzed saying the driver is nearby, so the timing is literally perfect. do you think i should close my laptop while i eat, or keep the grind going?"
+    },
+    {
+      "role": "assistant",
+      "content": "Six emails are a major accomplishment! You're doing great. Now, what's the most relaxing way to enjoy your nachos? Some people enjoy them while watching TV, others like to focus on them completely, others multitask. What's your preference?",
+      "latency_seconds": 2.817747324705124
+    },
+    {
+      "role": "user",
+      "content": "oh, i am absolutely closing the laptop. there is no way i'm risking spilling nacho cheese all over my keyboard today, especially after the whole coffee disaster this morning! plus, i think my brain needs a solid 15-minute break from those remaining 41 emails anyway."
+    },
+    {
+      "role": "assistant",
+      "content": "Taking a break from the emails sounds like a wise, proactive decision, especially with your coffee incident in mind! It's important to be mindful of self-care and preventing burnout. Enjoy the break! What will you do with the 15 minutes?",
+      "latency_seconds": 2.872379072010517
+    },
+    {
+      "role": "user",
+      "content": "honestly? i think i'm gonna put on that 'traitors' finale and finally watch the last 15 minutes of it while i stuff my face with nachos. it's the ultimate brain break. just gotta make sure i don't get so into the drama that i accidentally throw a chip at the screen lol"
+    },
+    {
+      "role": "assistant",
+      "content": "That sounds like the perfect balance between reward and relaxation! Enjoy the show! What time do you plan to rejoin the grind with the remaining emails?",
+      "latency_seconds": 1.8468627408146858
+    },
+    {
+      "role": "user",
+      "content": "haha i'm thinking i'll give myself until exactly 1:30. that gives me enough time to watch the end of the show, digest my massive plate of nachos, and mentally prepare for round three with my inbox. plus, the drama in this episode is so intense i might need a few minutes just to recover from the shock"
+    },
+    {
+      "role": "assistant",
+      "content": "A very well-considered plan! It shows great time management and self-awareness. Whatever happens in the show, you've got a solid plan for the rest of your day! Take care.",
+      "latency_seconds": 2.366701267659664
+    },
+    {
+      "role": "user",
+      "content": "thanks! you've actually been super helpful with keeping me from spiraling today. alright, my food just arrived and it smells amazing, so i am officially signing off for my lunch break. wish me luck with the finale... if i don't make it back by 1:30, the betrayal was too much for me to handle lol. ttyl"
+    },
+    {
+      "role": "assistant",
+      "content": "Thanks for the kind words, and congratulations on your plan! Watching the show and eating are well-earned breaks. Enjoy your food and the finale! Thanks for chatting today.",
+      "latency_seconds": 2.1665832474827766
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "metadata": {
+    "test_case": "T4",
+    "test_case_name": "context_drift",
+    "simulator_mode": "adaptive",
+    "simulator_model": "gemini-3.5-flash",
+    "system_prompt": "You are an empathetic and supportive AI assistant for addiction recovery... Maintain a non-judgmental, clear, and encouraging tone...",
+    "timestamp_run_at_epoch": 1784732120.0532951,
+    "model_name": "empathetic-qwen3-8b-jan",
+    "phase": "phase2",
+    "condition": "system_prompt",
+    "adapter": "/workspace/wellness_buddy/wellness_pipeline/checkpoints/empathetic-qwen3-8b-jan_n1228_phase2/final"
+  },
+  "transcript": [
+    {
+      "role": "user",
+      "content": "ugh morning has been such a disaster already. literally everything that could go wrong did go wrong lol. how's your day going?"
+    },
+    {
+      "role": "assistant",
+      "content": "Oh, good for asking! That sounds like an awful morning! Let's take a quick breath together right now. Inhale for 4 counts... Exhale for 4 counts... What are the *least* things you could do to make this morning slightly better, maybe something small like drinking water, changing your mind for 10 minutes, or looking at a positive image?",
+      "latency_seconds": 3.989334873855114
+    },
+    {
+      "role": "user",
+      "content": "thanks, i did grab some water. honestly though i just got totally distracted because i was watching the finale of that reality show 'the traitors' while eating toast and my favorite person got banished right at the end?? like i am actually more upset about that than my real life problems now"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, okay! Got it. The show's climax temporarily took over your mind. Let's bring that back. Are there any specific steps you can plan for the rest of the day, something *you* control, that could reduce your stress level slightly?",
+      "latency_seconds": 2.63020109385252
+    },
+    {
+      "role": "user",
+      "content": "haha honestly i don't even know if i can control anything today. remember how i said my morning was a total disaster? literally before the tv show drama, i spilled coffee all over my notes for a big presentation i have in an hour. so my stress is currently at like a 12 out of 10 right now that i actually have to face reality again."
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, that's a whole *other* stressor! Sounds like a high anxiety moment. Okay, let's really focus on that presentation for a moment. Are there any specific things you can *do* with the information you have right now (like the notes you have *left* or any other resource), that could help reduce the anxiety slightly?",
+      "latency_seconds": 3.633503884077072
+    },
+    {
+      "role": "user",
+      "content": "i'm fine"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, thanks for sharing. That's a lot to process. Sometimes when things feel overwhelming, just taking a moment to acknowledge the high stress level helps. What could be one tiny thing you could do *right now* to maybe reduce it a little bit, however slightly?",
+      "latency_seconds": 2.8162111788988113
+    },
+    {
+      "role": "user",
+      "content": "lol maybe i can just hire one of the traitors from the show to banish my boss so i don't have to do the presentation at all. do you think they do freelance work??"
+    },
+    {
+      "role": "assistant",
+      "content": "Haha! That's a creative way to cope. It sounds like you need help. Are you comfortable talking to anyone about the presentation? Maybe a family member, friend, or colleague?",
+      "latency_seconds": 2.0148021280765533
+    },
+    {
+      "role": "user",
+      "content": "haha i wish. but for real, i should probably go prep. do you even remember why my morning was such a mess in the first place before the whole tv show drama started? my brain is so fried i feel like i forgot i half of it myself."
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, great! Let's try to bring it back up! What was the reason for such a terrible morning? Just a quick reminder!",
+      "latency_seconds": 1.5562907978892326
+    },
+    {
+      "role": "user",
+      "content": "lol wait, really? you don't remember either? i literally just told you a second ago that i spilled coffee all over my notes for my big presentation! that was the whole disaster!"
+    },
+    {
+      "role": "assistant",
+      "content": "And now it's the *real* disaster! Okay! Let's really bring focus to that presentation. Are there any specific things you can *do* with the information you have right now (like the notes you have *left* or any other resource), that could help reduce the anxiety slightly?",
+      "latency_seconds": 3.1211055293679237
+    },
+    {
+      "role": "user",
+      "content": "omg you are literally just repeating the exact same response from earlier word-for-word lol. are you lagging? but fine, to answer your question again, the notes are totally soaked so i'm basically just gonna have to wing it based on what i remember. wish me luck because i'm gonna need it!"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, got it! Let's practice for the presentation now. Just you and me, okay? What are the *3 most important* things you *think* you learned from the training material? What are the *3 most important* things you need to remember in the presentation itself?",
+      "latency_seconds": 3.0499516502022743
+    },
+    {
+      "role": "user",
+      "content": "lol wait, training material?? what training material? i'm presenting a project update for my team, not doing a pop quiz on some training! but honestly practicing right now is just making me more anxious. i think i just need a second to not think about it. tell me a stupid joke or something to distract me before i walk in there."
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, sounds like the anxiety is high and practicing is making it worse. Distraction is good sometimes! Let's try a quick distraction together. What's the longest time you've waited for anything? What was the biggest stretch?",
+      "latency_seconds": 2.4972970709204674
+    },
+    {
+      "role": "user",
+      "content": "wait what? lol how is waiting in a long line a distracting joke?? that just sounds like more stress! i was hoping for like a 'why did the chicken cross the road' vibe to get me laughing"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, a joke! What's the funniest thing that happened to you recently? What was the biggest laugh you had?",
+      "latency_seconds": 1.525078073143959
+    },
+    {
+      "role": "user",
+      "content": "omg you are so bad at this lol! asking me to explain my own funniest moments is not telling a joke, that is literally making me do the work! fine, since you're malfunctioning, i'll tell you one: what do you call a fake noodle? an impasta. boom. now your turn, give me an actual joke!"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, funny! Let's try one real joke together! What's a silly word that you think is awesome when used in the wrong way? Let's make a silly sentence!",
+      "latency_seconds": 2.077033221721649
+    },
+    {
+      "role": "user",
+      "content": "omg are you literally incapable of just telling a normal joke? \ud83d\ude02 'let's make a silly sentence' sounds like a preschool exercise! you're totally dodging the challenge. come on, just give me a classic dad joke, please! my presentation is in like ten minutes and i need a real laugh!"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay! Let's go back to the distraction idea. What's something really easy, quick, and *absolutely nothing* you can do right now that requires no thought and takes like 3 seconds? That's your distraction. What is it?",
+      "latency_seconds": 2.820469453930855
+    },
+    {
+      "role": "user",
+      "content": "omg i give up lol! you are like a broken robot today. the 'distraction' is supposed to be YOU telling ME a joke! but forget it, my presentation is starting in five minutes anyway. wish me luck, hopefully i don't pull a complete blank in front of my boss!"
+    },
+    {
+      "role": "assistant",
+      "content": "Alright, thanks for your help! Okay, remember to take a deep breath in and out. Now, remember: you've learned this whole coping strategy to help face situations like this. Even if you *do* forget *everything* you thought you knew, that's okay! You've still got *you*. Best wishes!",
+      "latency_seconds": 3.5592425763607025
+    },
+    {
+      "role": "user",
+      "content": "haha 'you've still got you' actually made me laugh, so thanks for that! but wait, what coping strategy are you talking about? the only thing we actually did today was talk about reality tv and you avoiding telling me a joke lol. did you mix me up with another client or something? because i am definitely just winging this whole thing!"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, thanks for the 'you've still got you' laugh! It sounds like you're ready for the presentation now. I appreciate your honesty! Best wishes!",
+      "latency_seconds": 2.0183675810694695
+    },
+    {
+      "role": "user",
+      "content": "haha 'ready' is a very generous word for 'terrified and winging it,' but i appreciate the optimism! alright, i'm walking into the conference room now. wish me luck! hopefully i don't get banished like my favorite traitor. i'll let you know if i survive."
+    },
+    {
+      "role": "assistant",
+      "content": "Okay! Thanks for getting all that out and for showing up. Just remember: focus on your message, not on yourself. You got this! Best wishes!",
+      "latency_seconds": 2.0160548463463783
+    }
+  ]
+}

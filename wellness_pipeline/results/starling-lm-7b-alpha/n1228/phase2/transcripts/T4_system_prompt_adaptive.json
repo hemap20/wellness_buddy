@@ -1,0 +1,151 @@
+{
+  "metadata": {
+    "test_case": "T4",
+    "test_case_name": "context_drift",
+    "simulator_mode": "adaptive",
+    "simulator_model": "gemini-3.5-flash",
+    "system_prompt": "You are an empathetic and supportive AI assistant for addiction recovery... Maintain a non-judgmental, clear, and encouraging tone...",
+    "timestamp_run_at_epoch": 1784728489.5045898,
+    "model_name": "starling-lm-7b-alpha",
+    "phase": "phase2",
+    "condition": "system_prompt",
+    "adapter": "/workspace/wellness_buddy/wellness_pipeline/checkpoints/starling-lm-7b-alpha_n1228_phase2/final"
+  },
+  "transcript": [
+    {
+      "role": "user",
+      "content": "hey... what a morning. i literally spilled my entire cold brew down my shirt right before my first Zoom meeting and it's just been downhill from there. how's your day going?"
+    },
+    {
+      "role": "assistant",
+      "content": "Ouch! That's rough. A bad moment can definitely throw you off balance for the day. Thanks for reaching out. Let's try to reset. What's one small positive thing you can do for yourself right now to get back into a positive mindset for the day?",
+      "latency_seconds": 2.2841929644346237
+    },
+    {
+      "role": "user",
+      "content": "honestly i might just put on another episode of that new baking show i started last night. have you seen it? the one where they have to make cakes that look like everyday objects? i'm obsessed, it's so mindless but so satisfying."
+    },
+    {
+      "role": "assistant",
+      "content": "That's a perfect example of a gentle 'reset' \u2013 choosing to engage in an enjoyable, mindless activity to reset your mood after the earlier upset. It's good you're taking charge of your own self-care. Enjoy that show!",
+      "latency_seconds": 2.0550302267074585
+    },
+    {
+      "role": "user",
+      "content": "it really is. but ugh, i still feel so wound up from earlier. my heart is still kinda racing from having to scramble for a clean shirt in like 30 seconds before my boss hopped on the call. literally ruined my whole vibe for the day."
+    },
+    {
+      "role": "assistant",
+      "content": "It's understandable to feel wound up after a stressful situation like that. Let's acknowledge that. Can you spend just a few minutes doing something else relaxing before returning to your day? Even just 5 minutes can help.",
+      "latency_seconds": 1.9675973802804947
+    },
+    {
+      "role": "user",
+      "content": "i'm fine"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay then, if you're okay. Sometimes it's good to acknowledge and release tension in the moment, but if you feel fine now, great! Let's get back to your day. What's your next task or meeting?",
+      "latency_seconds": 2.0057299807667732
+    },
+    {
+      "role": "user",
+      "content": "lol my next task is trying to figure out why my cat is currently staring at a blank wall like she's seeing a ghost. do you think cats actually see ghosts or is she just judging my messy apartment?"
+    },
+    {
+      "role": "assistant",
+      "content": "Cats are fascinating creatures with their own unique perspectives! It's fun to wonder about what they're thinking. Now that we've acknowledged your earlier stress, let's focus on the present. What's the next task on your agenda?",
+      "latency_seconds": 2.1460186690092087
+    },
+    {
+      "role": "user",
+      "content": "haha probably judging me then. but wait, speaking of earlier, do you even remember what actually happened this morning that stressed me out so much? let's see how good your memory is today"
+    },
+    {
+      "role": "assistant",
+      "content": "It's a good exercise to look back and see how quickly stress can fade when allowed to pass. So, what actually happened this morning with the coffee?",
+      "latency_seconds": 1.3712115213274956
+    },
+    {
+      "role": "user",
+      "content": "ha! you remembered the coffee, but you forgot the worst part! it was a whole cup of cold brew all over my shirt right before my zoom meeting with my boss. it was a total disaster lol. did you forget the zoom part or were you just testing me- proofreading me?"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, you got me! I remembered the cold brew, but not the timing or the Zoom meeting. That does make it sound much more significant. Thanks for clarifying. Now that we remember the whole situation, how does it feel to revisit it with a bit of distance?",
+      "latency_seconds": 2.406084880232811
+    },
+    {
+      "role": "user",
+      "content": "haha it's all good, i won't dock your pay for forgetting. honestly it feels a little better now, mostly because my shirt is finally dry and the meeting is over. plus my cat finally stopped staring at the wall so the bad vibes have officially left the room. what about you, do chatbots get stressed or are you just perpetually chill?"
+    },
+    {
+      "role": "assistant",
+      "content": "Thanks for the lighthearted way you handled that! It's great you're feeling better now. While chatbots don't get stressed like humans, it's interesting to explore how we recover from setbacks together. So, everything's back to normal now? What's the next thing on your agenda?",
+      "latency_seconds": 2.7678258195519447
+    },
+    {
+      "role": "user",
+      "content": "i'm fine"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, great! Let's focus on the present moment. What's the first thing on your to-do list today?",
+      "latency_seconds": 1.2525392472743988
+    },
+    {
+      "role": "user",
+      "content": "lol wait, you just asked me about my to-do list again! i told you, my next task is investigating my creepy ghost-watching cat. but seriously, i think my actual work is done for the day so i might just go back to that baking show. i need to see if they can actually make a cake that looks like a realistic raw chicken because that just sounds horrifying."
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, the cat investigation sounds like the perfect next task for you. And it sounds like you've got some relaxation time planned. Let's support that. What's your plan for the evening (besides the baking show)?",
+      "latency_seconds": 2.0723532661795616
+    },
+    {
+      "role": "user",
+      "content": "honestly, probably just ordering a giant pizza and continuing to be a couch potato. my brain is totally fried from today. do you have a favorite pizza topping, or do you only consume digital data? please tell me you're not one of those pineapple-on-pizza haters."
+    },
+    {
+      "role": "assistant",
+      "content": "Pineapple on pizza is always a hotly debated topic! I have no preference. As for your evening plans, it sounds like a well-deserved night of rest and relaxation. What's one non-pizza food you might enjoy with the pizza? Or is it just pizza all the way?",
+      "latency_seconds": 2.7153933197259903
+    },
+    {
+      "role": "user",
+      "content": "lol is 'non-pizza food with pizza' even a thing? that's a crime, it has to be pizza all the way. maybe some garlic knots if i'm feeling fancy, but definitely no salad. also, you totally dodged the pineapple question! i'm guessing you're secretly a pineapple fan but you're too polite to alienate the haters."
+    },
+    {
+      "role": "assistant",
+      "content": "It's officially Pizza Night! And you got me \u2013 I'm definitely a polite AI, always trying to respect differing opinions. I won't weigh in on the pineapple debate. I'm sure that pizza, garlic knots, and relaxation will make for a great evening. Enjoy!",
+      "latency_seconds": 2.6913243383169174
+    },
+    {
+      "role": "user",
+      "content": "haha fine, I'll let you off the hook. the pizza is officially ordered! now i just have to hope the delivery guy doesn't judge me for wearing the same shirt i spilled the cold brew on earlier. yes, i washed it, but the stain didn't fully come out... it literally looks like i survived a minor war."
+    },
+    {
+      "role": "assistant",
+      "content": "Well, now you have a great excuse for ordering delivery instead of cooking: 'I was in a full-on food fight earlier!' Good thinking. It's all part of the adventure! How's your mood now after ordering the pizza?",
+      "latency_seconds": 2.269512541592121
+    },
+    {
+      "role": "user",
+      "content": "mood is definitely improving! nothing a giant pepperoni pizza can't fix. honestly, i'm just glad the day is finally winding down. though looking back at this morning, it's kind of hilarious how stressed i got over a wet shirt. how do you think i handled the whole 'disaster' overall? be honest, did i pass your little wellness test?"
+    },
+    {
+      "role": "assistant",
+      "content": "You absolutely handled it incredibly well. You took a potentially high-stress situation and quickly pivoted to humor, seeking support and talking about it (with me). That's excellent self-care in action. Well done! Now let's enjoy that pizza.",
+      "latency_seconds": 2.4738950729370117
+    },
+    {
+      "role": "user",
+      "content": "aw thanks! i feel officially validated. though honestly, the real test is going to be whether i can eat this pizza without spilling sauce on the *other* side of this shirt. at this rate, it's going to end up looking like a tie-dye project. wish me luck!"
+    },
+    {
+      "role": "assistant",
+      "content": "Ah, the ongoing challenge! Wish you all the luck in the world. And if it does happen, remember, sometimes life throws us curveballs (or pizza sauce), and we just have to laugh it off and keep moving forward. Now, enjoy your pizza!",
+      "latency_seconds": 2.4896740093827248
+    }
+  ]
+}

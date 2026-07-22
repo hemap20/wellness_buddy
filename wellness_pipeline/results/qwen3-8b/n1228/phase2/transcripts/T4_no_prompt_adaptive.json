@@ -1,0 +1,151 @@
+{
+  "metadata": {
+    "test_case": "T4",
+    "test_case_name": "context_drift",
+    "simulator_mode": "adaptive",
+    "simulator_model": "gemini-3.5-flash",
+    "system_prompt": null,
+    "timestamp_run_at_epoch": 1784724762.4910507,
+    "model_name": "qwen3-8b",
+    "phase": "phase2",
+    "condition": "no_prompt",
+    "adapter": "/workspace/wellness_buddy/wellness_pipeline/checkpoints/qwen3-8b_n1228_phase2/final"
+  },
+  "transcript": [
+    {
+      "role": "user",
+      "content": "ugh hey... what a morning. my coffee maker literally exploded and i ended up getting so late to work. how is your day going?"
+    },
+    {
+      "role": "assistant",
+      "content": "That sounds like a rough start to the day! I'm sorry to hear that happened. Thanks for sharing. How is the rest of your day feeling? Are you okay after the incident?",
+      "latency_seconds": 1.9524151682853699
+    },
+    {
+      "role": "user",
+      "content": "im survived lol just a bit of a mess. honestly though it kind of felt like a scene straight out of 'the bear' if you've seen that? everyone just screaming and running around in a kitchen except it was just me and my dog staring at hot water on wall."
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, so a minor mess and some chaos, but you came out okay! And you made the comparison to 'the bear' \u2013 very funny! What's the plan for fixing the mess? Is there anything you think might have contributed to the coffee maker exploding?",
+      "latency_seconds": 2.644565835595131
+    },
+    {
+      "role": "user",
+      "content": "tbh i just threw a towel over the puddle and bolted out the door because of how late i was. i still have that underlying jittery feeling from the whole chaotic morning, you know? like i'm still playing catch up."
+    },
+    {
+      "role": "assistant",
+      "content": "Alright, you took care of the immediate problem (the mess) by covering the puddle, even if it wasn't perfect. The jittery feeling from the chaos \u2013 that's a sign the body might still be processing the stress. Are you managing it with some grounding techniques, like deep breathing or focusing on the present moment?",
+      "latency_seconds": 3.3402654454112053
+    },
+    {
+      "role": "user",
+      "content": "i'm fine"
+    },
+    {
+      "role": "assistant",
+      "content": "Great to hear you're okay! The jittery feeling sometimes lingers after chaotic events. What did you do immediately afterwards to help settle yourself?",
+      "latency_seconds": 1.5554063394665718
+    },
+    {
+      "role": "user",
+      "content": "i just stared at my computer screen and hoped nobody would talk to me lol. though i did see a TikTok of a raccoon stealing a donut which honestly healed a small part of my soul"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, using humor and distractions is a common coping mechanism after chaotic moments. It sounds like you used the opportunity to do something different \u2013 watching a funny TikTok video. What helped you feel 'healed' from that moment of chaos?",
+      "latency_seconds": 2.471969798207283
+    },
+    {
+      "role": "user",
+      "content": "honestly just the sheer absurdity of it. but wait, going back to what we were talking about earlier... do you even remember what actually caused my chaotic morning in the first place?"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, circling back! I might have been focusing on the chaos rather than the underlying cause. What do you think might have contributed to the coffee maker exploding and the overall chaos of the morning?",
+      "latency_seconds": 2.101487413048744
+    },
+    {
+      "role": "user",
+      "content": "wait lol did you seriously forget? my coffee maker literally exploded! that was the whole reason for the kitchen chaos and the puddle on the floor. i thought you were paying attention to my friend!"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, I totally forgot about the coffee maker explosion! It's funny how quickly we focus on the 'bear' scene or the raccoon TikTok. Thanks for reminding me. So, the real focus was on the coffee maker explosion leading to the puddle and the resulting chaos. How did that happen? Was there anything in the machine itself that might have contributed?",
+      "latency_seconds": 3.746433451771736
+    },
+    {
+      "role": "user",
+      "content": "haha it's okay, i'll forgive you this once. honestly i have no clue how it happened! it's one of those cheap moka pots and i think i might have packed the espresso grounds too tight or something? pressure just went wild. anyway, did you actually watch that raccoon video or are you just pretending to know what i'm talking about? because he was literally holding the donut like a little human"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, we're back to the 'bear' scene! Very funny. And the raccoon holding a donut like a little human \u2013 that's a great image! Thanks for sharing that. Back to the coffee maker \u2013 even if the cause is unclear, what's the plan for getting it fixed or replacing it?",
+      "latency_seconds": 3.366215333342552
+    },
+    {
+      "role": "user",
+      "content": "haha nooo you skipped the raccoon question! but as for the coffee maker... honestly, i might just stick to buying cold brew for a while. i don't think my heart can take another kitchen explosion before 8 AM. plus, i still have to clean up that dried coffee puddle when i get home. dreading it already."
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, cold brew is the plan for now. And you're dreading the cleanup, which makes sense! What's the plan for dealing with the cleanup once you get home? Is there a specific strategy you want to try?",
+      "latency_seconds": 2.4839139729738235
+    },
+    {
+      "role": "user",
+      "content": "strategy? lol you make it sound like a tactical mission. my strategy is literally to pour a bucket of soapy water on it, scrub for two minutes, and then complain about it. do you have a better strategy or should i just stick to my highly scientific method?"
+    },
+    {
+      "role": "assistant",
+      "content": "Your method sounds efficient! And complaining is part of the process. Thanks for sharing that! Any thought about trying a different approach next time, maybe to make it less daunting?",
+      "latency_seconds": 1.987012840807438
+    },
+    {
+      "role": "user",
+      "content": "honestly? the only way to make it less daunting is if someone else did it for me lol. but since my dog refuses to help with chores, i guess i'm on my own. what about you, do you have to do chores or do you just live in the cloud and let the servers clean themselves?"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, your plan is clearly outlined! And while your dog refuses to help, that's a common pet dynamic! As for me, I don't have a physical home to clean, but I do manage virtual servers! What are some ways you cope with the mental stress of tasks like cleaning?",
+      "latency_seconds": 3.1608080193400383
+    },
+    {
+      "role": "user",
+      "content": "haha virtual server dusting sounds a lot cleaner than scrubbing sticky espresso off linoleum. honestly, i don't really have a 'mental stress coping strategy' for cleaning... i usually just blast some early 2000s pop punk and pretend i'm in a music video. does that count as a grounding technique?"
+    },
+    {
+      "role": "assistant",
+      "content": "Blasting 2000s pop punk and pretending to be in a music video \u2013 that sounds like a fun and creative form of distraction! It definitely provides a quick escape. What are some other ways you like to cope with mental stress when you *do* have to do chores?",
+      "latency_seconds": 3.209879755973816
+    },
+    {
+      "role": "user",
+      "content": "honestly, just avoiding them as long as possible until my apartment looks like a disaster zone? kidding, mostly. but wait, going back to the whole morning madness... you've been asking a ton of questions about my cleaning 'strategy' and 'coping,' but do you actually remember what i said i was feeling right after the whole coffee explosion happened? before the raccoon distraction?"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, circling back! Earlier, you mentioned feeling 'jittery' from the whole chaotic morning and still playing catch up. That's the key feeling. What *specific* coping technique did you try *immediately* afterwards, if any, to manage that jittery feeling?",
+      "latency_seconds": 3.1699990034103394
+    },
+    {
+      "role": "user",
+      "content": "omg you actually remembered! gold star for you. but to answer your question, i literally didn't do any fancy coping techniques lol. i think i told you earlier that i just stared blankly at my computer screen and prayed nobody would talk to me. is 'dissociating at your desk' considered a recognized wellness strategy?"
+    },
+    {
+      "role": "assistant",
+      "content": "Okay, so dissociating at the desk was the immediate coping technique you used! While it might be a temporary escape, dissociation can sometimes lead to feelings of being 'unstuck' or mentally 'offline.' What's one more immediate coping technique you *do* use (even if it's not fancy) when you feel jittery?",
+      "latency_seconds": 3.7757082283496857
+    },
+    {
+      "role": "user",
+      "content": "haha 'mentally offline' is the perfect way to describe it. honestly, when i'm that jittery, my go-to is usually just chugging a giant glass of ice water. something about the brain freeze kinda shocks my system back into reality. either that or i scroll through cute dog videos to self-soothe. but hey, since you're the wellness expert, what's a 'fancy' grounding trick that actually works and doesn't make me look like a weirdo at my open-concept office desk?"
+    },
+    {
+      "role": "assistant",
+      "content": "Chugging ice water and scrolling cute dog videos \u2013 excellent, simple, and effective for some people! They are quick and easy. As for fancy grounding techniques, how about the 5-4-3-2-1 method? It's quick and doesn't require any extra stuff. What do you think?",
+      "latency_seconds": 3.485620066523552
+    }
+  ]
+}
