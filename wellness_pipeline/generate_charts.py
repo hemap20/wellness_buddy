@@ -230,7 +230,7 @@ def chart_loss_curves(model: str, size: int, phase: int, out_dir: Path, log: lis
 # ---------------------------------------------------------------------------
 # 1b. Checkpoint-eval trajectory (v3+) — all 6 rubric dimensions across the
 # checkpoint fractions checkpoint_eval.py evaluated, with the selected
-# checkpoint marked. Reads reports/{version}/{model}_checkpoint_trajectory.json
+# checkpoint marked. Reads reports/{version}/{model}_n{size}_phase{N}_checkpoint_trajectory.json
 # (written by checkpoint_eval.py::run_checkpoint_eval_for_run), NOT
 # loss_curve.json — this is judge-score trajectory, not training loss.
 # ---------------------------------------------------------------------------
@@ -241,7 +241,7 @@ _DIM_LINESTYLES = ["-", "--", "-.", ":", "-", "--"]
 
 def chart_checkpoint_trajectory(model: str, phase: int, size: int, out_dir: Path, log: list, version: str = None):
     version = version or PIPELINE_VERSION
-    trajectory_path = REPORT_DIR / version / f"{model}_checkpoint_trajectory.json"
+    trajectory_path = REPORT_DIR / version / f"{model}_{rm.format_dataset_size(size)}_phase{phase}_checkpoint_trajectory.json"
     try:
         if not trajectory_path.exists():
             log.append(f"SKIP checkpoint_trajectory {model} phase{phase}: no {trajectory_path.name}")

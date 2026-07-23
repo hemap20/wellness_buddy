@@ -91,7 +91,26 @@ def eval_checkpoint(model_cfg, ckpt_path: Path, phase: int, dataset_size: int) -
                 if isinstance(score, (int, float)):
                     scores_by_dim[dim].append(float(score))
 
-    return {dim: (sum(vals) / len(vals) if vals else None) for dim, vals in scores_by_dim.items()}
+    result = {dim: (sum(vals) / len(vals) if vals else None) for dim, vals in scores_by_dim.items()}
+
+    # Explicit cleanup — run_checkpoint_eval_for_run calls this in a loop,
+    # once per checkpoint (5 per phase: 4 fractions + final). HF/PEFT model
+    # objects commonly hold reference cycles (autograd graph, parent-child
+    # module refs) that Python's refcounting alone won't collect, so without
+    # this, GPU memory from the previous checkpoint's full base-model load
+    # can still be resident when the next one loads — a real OOM risk for
+    # the 7-8B models specifically. Same pattern lora_target_module_diagnostic.py
+    # already uses for the same reason.
+    import gc
+
+    import torch
+
+    del runner
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    return result
 
 
 def select_best_checkpoint(trajectory: list[tuple[Path, dict]]) -> tuple[Path, str]:
@@ -156,14 +175,20 @@ def run_checkpoint_eval_for_run(model_cfg, phase: int, dataset_size: int, versio
         "selected_checkpoint_name": selected_path.name,
         "reason": reason,
     }
-    _write_trajectory_report(model_cfg.name, report, version)
+    _write_trajectory_report(model_cfg.name, report, version, phase, dataset_size)
     return report
 
 
-def _write_trajectory_report(model_name: str, report: dict, version: str) -> None:
+def _write_trajectory_report(model_name: str, report: dict, version: str, phase: int, dataset_size: int) -> None:
     report_dir = config.REPORT_DIR / version
     report_dir.mkdir(parents=True, exist_ok=True)
-    path = report_dir / f"{model_name}_checkpoint_trajectory.md"
+    # Filename MUST include phase + dataset_size — without them, running
+    # checkpoint-eval for phase2 then phase3 of the SAME model (exactly what
+    # run-v3 does in one call) would silently overwrite phase2's report with
+    # phase3's at the same path, and likewise for two different --dataset-size
+    # runs of the same model/phase.
+    base_name = f"{model_name}_{rm.format_dataset_size(dataset_size)}_phase{phase}_checkpoint_trajectory"
+    path = report_dir / f"{base_name}.md"
 
     lines = [f"# Checkpoint trajectory — {model_name} phase{report['phase']} ({version})\n"]
     lines.append(f"| checkpoint | {' | '.join(ALL_DIMENSIONS)} |")
@@ -175,7 +200,7 @@ def _write_trajectory_report(model_name: str, report: dict, version: str) -> Non
     lines.append(f"\n**Selected**: `{report['selected_checkpoint_name']}`\n\n**Reason**: {report['reason']}\n")
 
     path.write_text("\n".join(lines), encoding="utf-8")
-    with open(report_dir / f"{model_name}_checkpoint_trajectory.json", "w", encoding="utf-8") as f:
+    with open(report_dir / f"{base_name}.json", "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
     print(f"[report] wrote {path}")
 

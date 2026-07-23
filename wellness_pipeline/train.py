@@ -177,7 +177,8 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
     data_cfg = data_cfg or DataConfig()
     version = version or PIPELINE_VERSION
 
-    assert phase in (2, 3), "phase must be 2 or 3"
+    if phase not in (2, 3):
+        raise ValueError(f"phase must be 2 or 3, got {phase!r}")
 
     # Resume support: if this exact (model, dataset_size, phase) run already
     # finished (a train_summary.json exists at its final checkpoint), reuse

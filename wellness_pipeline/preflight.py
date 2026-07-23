@@ -291,9 +291,11 @@ def assert_batch_table(model_cfgs) -> list[tuple]:
         rows.append((model_cfg.name, per_device, grad_accum, effective))
         print(f"{model_cfg.name:<28} {per_device:>10} {grad_accum:>11} {effective:>10}")
     effectives = {r[3] for r in rows}
-    assert effectives == {config.TARGET_EFFECTIVE_BATCH_SIZE}, (
-        f"Effective batch sizes are not identical across models: {rows}"
-    )
+    if effectives != {config.TARGET_EFFECTIVE_BATCH_SIZE}:
+        # A bare `assert` here would be silently stripped under `python -O`/
+        # PYTHONOPTIMIZE, defeating the whole point of this being a hard gate
+        # rather than a warning — use an explicit exception instead.
+        raise PreflightError(f"Effective batch sizes are not identical across models: {rows}")
     print(f"[ok] all {len(rows)} models hit effective batch size {config.TARGET_EFFECTIVE_BATCH_SIZE}")
     return rows
 
