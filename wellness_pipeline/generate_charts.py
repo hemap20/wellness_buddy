@@ -26,7 +26,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import results_manager as rm
-from config import INFERENCE_CONDITIONS, PIPELINE_VERSION
+from config import CHECKPOINT_DIR, INFERENCE_CONDITIONS, PIPELINE_VERSION, REPORT_DIR, rank_alpha_for
 from report import DIMENSIONS
 from metrics import sample_efficiency
 
@@ -54,14 +54,68 @@ def color_for(model: str) -> tuple:
     return _model_colors[model]
 
 
-# Rough size-tier bucketing from model name — config.py has no explicit
-# parameter-count field, so this is a heuristic, not exact.
-def size_tier(model: str) -> str:
-    name = model.lower()
-    if any(s in name for s in ("dialogpt", "gemma-3-1b", "gemma-4-e2b")):
-        return "small (<3B)"
-    if any(s in name for s in ("7b", "8b")):
-        return "large (7-8B)"
+# Real total-parameter counts, measured live via lora_target_module_diagnostic.py
+# during this session (not guessed from the name) — used as a fallback when a
+# model has no recorded rank_tier yet (below). A name-substring heuristic here
+# previously misclassified gemma-4-e2b-it (5.1B params) as "small" just
+# because its name contains "gemma-...-e2b" alongside gemma-3-1b-it's — fixed
+# by using measured params + config.rank_alpha_for's real tier boundaries
+# instead of string-matching the model name.
+_MEASURED_TOTAL_PARAMS = {
+    "dialogpt-small": 124_734_720,
+    "gemma-3-1b-it": 1_002_867_840,
+    "gemma-4-e2b-it": 5_115_012_640,
+    "starling-lm-7b-alpha": 7_269_011_456,
+    "empathetic-qwen3-8b-jan": 8_221_406_208,
+    "qwen3-8b": 8_221_406_208,
+    "mistral-7b-instruct-v0.3": 7_275_286_528,
+    "llama-3-8b": 8_057_524_224,
+}
+
+
+# Chart-grouping tier deliberately DIFFERS from the LoRA rank tier for this
+# one model: gemma-4-e2b-it's raw measured params (5.1B) put it in the
+# "large" rank tier for training (r=32/alpha=64, same as the 7-8B models —
+# see config.RANK_TIERS), but "E2B" is Google's own "effective 2B params"
+# designation for this Gemma 3n-family model (per-layer embeddings/shared
+# params inflate the raw count well above its actual active-compute
+# footprint) — for chart *grouping* (which is about presenting results the
+# way you think about model size, not about training compute cost) it
+# belongs with the small models. This mismatch vs. the rank-tier table is
+# intentional, not a bug — don't "fix" it by changing RANK_TIERS/rank_alpha_for.
+_EFFECTIVE_TIER_OVERRIDES = {
+    "gemma-4-e2b-it": "small",
+}
+
+
+def size_tier(model: str, version: str = None) -> str:
+    """Chart-grouping tier for this model. Checks, in order: (1) an explicit
+    _EFFECTIVE_TIER_OVERRIDES entry, for models whose marketed/effective size
+    class differs from their raw param count; (2) the rank_tier already
+    recorded in a real train_summary.json for this model (train.py records
+    it per run — see config.RANK_TIERS/rank_alpha_for), since that's the
+    tier actually used for that run's LoRA config; (3) _MEASURED_TOTAL_PARAMS
+    (still real measured numbers, just not from this specific run) for
+    models without a completed training run yet. Never falls back to
+    name-substring guessing."""
+    if model in _EFFECTIVE_TIER_OVERRIDES:
+        return _EFFECTIVE_TIER_OVERRIDES[model]
+
+    version = version or PIPELINE_VERSION
+    version_root = CHECKPOINT_DIR / version
+    if version_root.is_dir():
+        for run_dir in version_root.glob(f"{model}_{version}_*"):
+            summary_path = run_dir / "train_summary.json"
+            if summary_path.exists():
+                try:
+                    rank_tier = json.loads(summary_path.read_text()).get("rank_tier")
+                except (json.JSONDecodeError, OSError):
+                    rank_tier = None
+                if rank_tier:
+                    return rank_tier
+    if model in _MEASURED_TOTAL_PARAMS:
+        tier_name, _, _ = rank_alpha_for(_MEASURED_TOTAL_PARAMS[model])
+        return tier_name
     return "unknown"
 
 
@@ -174,11 +228,76 @@ def chart_loss_curves(model: str, size: int, phase: int, out_dir: Path, log: lis
 
 
 # ---------------------------------------------------------------------------
-# 2. Baseline vs. phase2 vs. phase3, all in one graph per model
+# 1b. Checkpoint-eval trajectory (v3+) — all 6 rubric dimensions across the
+# checkpoint fractions checkpoint_eval.py evaluated, with the selected
+# checkpoint marked. Reads reports/{version}/{model}_checkpoint_trajectory.json
+# (written by checkpoint_eval.py::run_checkpoint_eval_for_run), NOT
+# loss_curve.json — this is judge-score trajectory, not training loss.
 # ---------------------------------------------------------------------------
 
 _DIM_MARKERS = ["o", "s", "^", "D", "v", "P"]
 _DIM_LINESTYLES = ["-", "--", "-.", ":", "-", "--"]
+
+
+def chart_checkpoint_trajectory(model: str, phase: int, size: int, out_dir: Path, log: list, version: str = None):
+    version = version or PIPELINE_VERSION
+    trajectory_path = REPORT_DIR / version / f"{model}_checkpoint_trajectory.json"
+    try:
+        if not trajectory_path.exists():
+            log.append(f"SKIP checkpoint_trajectory {model} phase{phase}: no {trajectory_path.name}")
+            return
+        report_data = json.loads(trajectory_path.read_text())
+    except Exception as exc:
+        log.append(f"SKIP checkpoint_trajectory {model} phase{phase}: {exc}")
+        return
+
+    if report_data.get("phase") != phase or report_data.get("dataset_size") != size:
+        log.append(f"SKIP checkpoint_trajectory {model} phase{phase} n{size}: "
+                    f"report is for phase{report_data.get('phase')} n{report_data.get('dataset_size')}")
+        return
+
+    trajectory = report_data.get("trajectory") or []
+    if not trajectory:
+        log.append(f"SKIP checkpoint_trajectory {model} phase{phase}: empty trajectory")
+        return
+
+    checkpoint_names = [entry["checkpoint"] for entry in trajectory]
+    selected_name = report_data.get("selected_checkpoint_name")
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    per_checkpoint_avgs = []
+    for i, dim in enumerate(DIMENSIONS):
+        vals = [entry["scores"].get(dim) for entry in trajectory]
+        if all(v is None for v in vals):
+            continue  # e.g. system_prompt_dependency, always N/A for checkpoint-eval's single-condition passes
+        ax.plot(checkpoint_names, vals, marker=_DIM_MARKERS[i % len(_DIM_MARKERS)],
+                 linestyle=_DIM_LINESTYLES[i % len(_DIM_LINESTYLES)],
+                 markersize=8, linewidth=1.5, alpha=0.75, label=dim.replace("_", " "))
+
+    # Bold "average (all dims)" line — same convention as chart_baseline_vs_phases,
+    # skipping dims with no numeric score at each checkpoint (e.g. system_prompt_dependency).
+    for entry in trajectory:
+        scores = [v for v in entry["scores"].values() if isinstance(v, (int, float))]
+        per_checkpoint_avgs.append(sum(scores) / len(scores) if scores else None)
+    ax.plot(checkpoint_names, per_checkpoint_avgs, marker="*", markersize=14, linewidth=3,
+             color="black", label="average (all dims)")
+
+    if selected_name in checkpoint_names:
+        ax.axvline(checkpoint_names.index(selected_name), color="black", linewidth=1.5, linestyle=":",
+                    label=f"selected: {selected_name}")
+
+    ax.set_ylim(0.5, 5.5)
+    ax.set_ylabel("score (1-5)")
+    plt.setp(ax.get_xticklabels(), rotation=30, ha="right")
+    ax.set_title(f"Checkpoint-eval trajectory — {model}, phase {phase}, n{size:03d} ({version})")
+    ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.02, 1))
+    savefig(fig, out_dir / f"n{size:03d}" / f"checkpoint_trajectory_{model}_phase{phase}.png")
+    log.append(f"OK   checkpoint_trajectory {model} phase{phase} n{size} (selected: {selected_name})")
+
+
+# ---------------------------------------------------------------------------
+# 2. Baseline vs. phase2 vs. phase3, all in one graph per model
+# ---------------------------------------------------------------------------
 
 
 def chart_baseline_vs_phases(models: list[str], size: int, out_dir: Path, log: list, version: str = None):
@@ -233,7 +352,7 @@ def chart_cross_model_ranking(models: list[str], size: int, phase: int, conditio
                                out_dir: Path, log: list, version: str = None):
     tiers: dict[str, list[str]] = {}
     for m in models:
-        tiers.setdefault(size_tier(m), []).append(m)
+        tiers.setdefault(size_tier(m, version=version), []).append(m)
 
     any_chart = False
     for tier, tier_models in tiers.items():
@@ -430,6 +549,7 @@ def run(out_dir: str = None, phases: list[int] = None, robustness_metric: str = 
         for model in models:
             for phase in phases:
                 chart_loss_curves(model, size, phase, out_dir, log, version=version)
+                chart_checkpoint_trajectory(model, phase, size, out_dir, log, version=version)
 
         chart_baseline_vs_phases(models, size, out_dir, log, version=version)
         for condition in INFERENCE_CONDITIONS["phase2"]:
