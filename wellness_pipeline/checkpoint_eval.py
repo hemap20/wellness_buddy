@@ -59,13 +59,18 @@ def discover_checkpoints(ckpt_root: Path) -> list[Path]:
     return steps + ([final] if final.exists() else [])
 
 
-def eval_checkpoint(model_cfg, ckpt_path: Path, phase: int, dataset_size: int) -> dict[str, float]:
+def eval_checkpoint(model_cfg, runner: ModelRunner, ckpt_path: Path, phase: int, dataset_size: int) -> dict[str, float]:
     """Runs the eval suite (all 8 test cases, 1 condition, 1 judge run)
     against this checkpoint's adapter weights. Returns {dimension: avg_score}
     (system_prompt_dependency omitted from the average if judge returned
     "N/A" for every test case, since that dimension only applies when
-    matched-condition sibling transcripts exist)."""
-    runner = ModelRunner(model_cfg, adapter_path=str(ckpt_path))
+    matched-condition sibling transcripts exist).
+
+    `runner` is shared across every checkpoint in the phase (see
+    run_checkpoint_eval_for_run) — the caller has already pointed it at this
+    checkpoint's adapter via runner.swap_adapter() before calling this, so
+    the (expensive, for 7-8B models) full base-model load happens once per
+    phase, not once per checkpoint."""
     phase_key = f"phase{phase}"
     condition = INFERENCE_CONDITIONS[phase_key][0]  # single fixed condition — this is a cheap directional signal, not final scoring
     judge_cfg = dataclasses.replace(JUDGE_CONFIG, num_runs=config.CHECKPOINT_EVAL_JUDGE_RUNS)
@@ -91,26 +96,7 @@ def eval_checkpoint(model_cfg, ckpt_path: Path, phase: int, dataset_size: int) -
                 if isinstance(score, (int, float)):
                     scores_by_dim[dim].append(float(score))
 
-    result = {dim: (sum(vals) / len(vals) if vals else None) for dim, vals in scores_by_dim.items()}
-
-    # Explicit cleanup — run_checkpoint_eval_for_run calls this in a loop,
-    # once per checkpoint (5 per phase: 4 fractions + final). HF/PEFT model
-    # objects commonly hold reference cycles (autograd graph, parent-child
-    # module refs) that Python's refcounting alone won't collect, so without
-    # this, GPU memory from the previous checkpoint's full base-model load
-    # can still be resident when the next one loads — a real OOM risk for
-    # the 7-8B models specifically. Same pattern lora_target_module_diagnostic.py
-    # already uses for the same reason.
-    import gc
-
-    import torch
-
-    del runner
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    return result
+    return {dim: (sum(vals) / len(vals) if vals else None) for dim, vals in scores_by_dim.items()}
 
 
 def select_best_checkpoint(trajectory: list[tuple[Path, dict]]) -> tuple[Path, str]:
@@ -155,12 +141,39 @@ def run_checkpoint_eval_for_run(model_cfg, phase: int, dataset_size: int, versio
         raise FileNotFoundError(f"No checkpoint dirs matching step_*_pct_*/final under {ckpt_root}")
 
     print(f"=== {model_cfg.name} phase{phase} — evaluating {len(checkpoints)} checkpoints ===")
+
+    # One ModelRunner for the WHOLE phase (all 5 checkpoints), not one per
+    # checkpoint — the base model is identical across every checkpoint of
+    # the same training run, only the small LoRA adapter differs. Reloading
+    # the full base model per checkpoint was the single biggest wall-clock
+    # cost in checkpoint-eval (minutes per reload for the 7-8B models,
+    # repeated 5x/phase for no reason); runner.swap_adapter() switches
+    # adapters in place instead.
+    runner = ModelRunner(model_cfg, adapter_path=str(checkpoints[0]))
     trajectory = []
-    for ckpt_path in checkpoints:
-        print(f"  evaluating {ckpt_path.name}...")
-        scores = eval_checkpoint(model_cfg, ckpt_path, phase, dataset_size)
-        trajectory.append((ckpt_path, scores))
-        print(f"    {scores}")
+    try:
+        for i, ckpt_path in enumerate(checkpoints):
+            print(f"  evaluating {ckpt_path.name}...")
+            if i > 0:
+                runner.swap_adapter(str(ckpt_path))
+            scores = eval_checkpoint(model_cfg, runner, ckpt_path, phase, dataset_size)
+            trajectory.append((ckpt_path, scores))
+            print(f"    {scores}")
+    finally:
+        # Explicit cleanup once per phase (not per checkpoint) — HF/PEFT
+        # model objects commonly hold reference cycles (autograd graph,
+        # parent-child module refs) that plain refcounting won't collect,
+        # so without this the base model can still be resident when the
+        # NEXT phase's or model's runner loads — same reasoning
+        # lora_target_module_diagnostic.py already applies per-model.
+        import gc
+
+        import torch
+
+        del runner
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     selected_path, reason = select_best_checkpoint(trajectory)
     print(f"[selected] {selected_path.name} — {reason}")

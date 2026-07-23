@@ -50,6 +50,35 @@ class ModelRunner:
             or 1024
         )
 
+    def swap_adapter(self, adapter_path: str) -> None:
+        """Switches to a different LoRA adapter WITHOUT reloading the base
+        model's weights — the base weights are identical across every
+        checkpoint of the same training run (only the small adapter differs),
+        so re-downloading/re-loading the full base model per checkpoint is
+        pure waste. Used by checkpoint_eval.py to evaluate all 4 checkpoint
+        fractions + final for a phase without paying a full model reload
+        (minutes, for the 7-8B models) for each one — swapping only costs
+        loading the tiny adapter weights themselves.
+
+        Each adapter is kept loaded under its own name rather than deleted
+        after use — adapters are ~0.2-0.4% of total params (see
+        lora_target_module_diagnostic.py's trainable_pct numbers), so holding
+        all 5 checkpoints' adapters in memory simultaneously is negligible
+        next to the base model itself."""
+        from peft import PeftModel
+
+        adapter_name = str(adapter_path)
+        if not isinstance(self.model, PeftModel):
+            self.model = PeftModel.from_pretrained(self.model, adapter_path, adapter_name=adapter_name)
+            self.model.to(self.device)
+            self.model.eval()
+        elif adapter_name not in self.model.peft_config:
+            self.model.load_adapter(adapter_path, adapter_name=adapter_name)
+            self.model.set_adapter(adapter_name)
+        else:
+            self.model.set_adapter(adapter_name)
+        self.adapter_path = adapter_path
+
     def generate(self, messages: list[dict]) -> tuple[str, float]:
         """messages: prior conversation, ending in a user turn (no trailing
         assistant turn). Returns (assistant_text, latency_seconds)."""
