@@ -104,7 +104,34 @@ def validate_chat_template(model_cfg, data_cfg) -> tuple[str, bool, list[str]]:
     return full_text, (len(issues) == 0), issues
 
 
-def validate_chat_templates(model_cfgs, data_cfg) -> dict[str, ModelPreflightResult]:
+def chat_template_report_path(version: str) -> Path:
+    return config.REPORT_DIR / version / "chat_template_check.md"
+
+
+def _write_chat_template_only_report(results: dict[str, ModelPreflightResult], version: str) -> Path:
+    """Written eagerly, right after formatting — BEFORE the manual-review
+    confirmation gate — so the file exists to read (or tail -f) while you're
+    deciding, rather than only appearing after run_preflight finishes (by
+    which point the interactive y/N prompt already needed an answer). Kept
+    deliberately separate from _write_report()'s fuller version (which adds
+    BLOCKED/READY status once every gate has run) — that one overwrites this
+    file at the end with more detail, same path."""
+    path = chat_template_report_path(version)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"# Chat template check — {version}\n", "(written before manual-review confirmation; re-written with BLOCKED/READY status once preflight finishes)\n"]
+    for name, r in results.items():
+        lines.append(f"## {name}\n")
+        if r.chat_template_issues:
+            lines.append(f"**[automated check] FAILED**: {r.chat_template_issues}\n")
+        else:
+            lines.append("**[automated check] passed** (expected special tokens present, no duplication)\n")
+        lines.append(f"```\n{r.chat_template_text or '<no output — see issues above>'}\n```\n")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
+def validate_chat_templates(model_cfgs, data_cfg, version: str = None) -> dict[str, ModelPreflightResult]:
+    version = version or config.PIPELINE_VERSION
     results = {}
     for model_cfg in model_cfgs:
         result = ModelPreflightResult(name=model_cfg.name)
@@ -124,6 +151,9 @@ def validate_chat_templates(model_cfgs, data_cfg) -> dict[str, ModelPreflightRes
             print(f"[automated check] FAILED: {issues}")
         else:
             print("[automated check] passed (expected special tokens present, no duplication)")
+
+    report_path = _write_chat_template_only_report(results, version)
+    print(f"\n[report] chat-template output also written to {report_path} — read it there if terminal scrollback is inconvenient.")
     return results
 
 
@@ -253,7 +283,7 @@ def run_preflight(model_cfgs, data_cfg, version: str, reviewed_templates: bool =
     """Returns {model_name: ModelPreflightResult}. Models with `.blocked=True`
     must NOT proceed to training. Writes a durable report to
     reports/{version}/chat_template_check.md."""
-    template_results = validate_chat_templates(model_cfgs, data_cfg)
+    template_results = validate_chat_templates(model_cfgs, data_cfg, version=version)
     target_results = validate_target_modules(model_cfgs)
     batch_rows = assert_batch_table(model_cfgs)
     batch_by_name = {r[0]: r for r in batch_rows}
@@ -298,9 +328,8 @@ def run_preflight(model_cfgs, data_cfg, version: str, reviewed_templates: bool =
 
 
 def _write_report(results: dict[str, ModelPreflightResult], version: str) -> None:
-    report_dir = config.REPORT_DIR / version
-    report_dir.mkdir(parents=True, exist_ok=True)
-    path = report_dir / "chat_template_check.md"
+    path = chat_template_report_path(version)
+    path.parent.mkdir(parents=True, exist_ok=True)
     lines = [f"# Preflight report — {version}\n"]
     for name, r in results.items():
         status = "BLOCKED" if r.blocked else "READY"
