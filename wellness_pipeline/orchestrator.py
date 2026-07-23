@@ -37,6 +37,7 @@ from config import (
     INFERENCE_CONDITIONS,
     LOG_DIR,
     MODELS_UNDER_TEST,
+    PIPELINE_VERSION,
     SIMULATOR_CONFIG,
     SimulatorConfig,
     system_prompt_for_condition,
@@ -58,7 +59,11 @@ def cmd_train(args):
 
     model_cfg = _resolve_model(args.model, tag=args.tag)
     data_cfg = DataConfig(num_samples=args.num_samples) if args.num_samples is not None else None
-    print(json.dumps(train.run(args.phase, model_cfg=model_cfg, data_cfg=data_cfg, force=args.force), indent=2))
+    version = getattr(args, "version", None)
+    print(json.dumps(
+        train.run(args.phase, model_cfg=model_cfg, data_cfg=data_cfg, force=args.force, version=version),
+        indent=2,
+    ))
 
 
 def cmd_inference(args):
@@ -98,15 +103,15 @@ def cmd_score(args):
 
     record = judge.load_transcript(args.transcript)
     related = None if args.no_related else judge.find_related_transcripts(record)
-    runs = judge.score_transcript(record, related_records=related)
-    path = judge.save_scores(record, runs)
+    scoring = judge.score_transcript(record, related_records=related)
+    path = judge.save_scores(record, scoring)
     print(f"Scores saved to {path}")
 
 
 def cmd_report(args):
     import report
 
-    print(json.dumps(report.run(args.legacy_scores_dir, args.out), indent=2))
+    print(json.dumps(report.run(args.legacy_scores_dir, args.out, version=getattr(args, "version", None)), indent=2))
 
 
 def _resolve_dataset_size(args) -> int:
@@ -115,12 +120,14 @@ def _resolve_dataset_size(args) -> int:
     return DataConfig().num_samples
 
 
-def _append_timing(model_name: str, dataset_size: int, step_name: str, duration_seconds: float, status: str) -> None:
+def _append_timing(model_name: str, dataset_size: int, step_name: str, duration_seconds: float, status: str,
+                    version: str = None) -> None:
     """Appended-only log of how long each run-all step took, per model/dataset
     size — a near-zero duration on a skipped (already-done) step is expected
     and informative on its own, not a bug. Kept separate from manifest.jsonl
     (which is about completed test results, not step wall-clock time)."""
-    path = rm.DEFAULT_RESULTS_ROOT / "timings.jsonl"
+    version = version or PIPELINE_VERSION
+    path = rm.get_version_root(version) / "timings.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "model": model_name, "dataset_size": dataset_size, "step": step_name,
@@ -131,15 +138,17 @@ def _append_timing(model_name: str, dataset_size: int, step_name: str, duration_
         f.write(json.dumps(record) + "\n")
 
 
-def _write_training_meta(model_name: str, dataset_size: int, phase: int) -> None:
+def _write_training_meta(model_name: str, dataset_size: int, phase: int, version: str = None) -> None:
     """Copies the already-written train_summary.json / loss log into this
     run's results/ folder as loss_curve.json + checkpoints_meta.json (step
     numbers + paths, not the weights themselves)."""
-    # Must match train.py's naming exactly (namespaced by dataset size so
-    # different sample counts never collide on the same checkpoint dir).
-    run_name = f"{model_name}_{rm.format_dataset_size(dataset_size)}_phase{phase}"
-    summary_path = CHECKPOINT_DIR / run_name / "train_summary.json"
-    loss_log_path = LOG_DIR / f"{run_name}_loss.jsonl"
+    version = version or PIPELINE_VERSION
+    # Must match train.py's naming exactly (namespaced by version + dataset
+    # size so different pipeline generations or sample counts never collide
+    # on the same checkpoint dir).
+    run_name = f"{model_name}_{version}_{rm.format_dataset_size(dataset_size)}_phase{phase}"
+    summary_path = CHECKPOINT_DIR / version / run_name / "train_summary.json"
+    loss_log_path = LOG_DIR / version / f"{run_name}_loss.jsonl"
     if not summary_path.exists():
         print(f"[warn] no train_summary.json at {summary_path} — skipping checkpoints_meta.json/loss_curve.json")
         return
@@ -147,10 +156,10 @@ def _write_training_meta(model_name: str, dataset_size: int, phase: int) -> None
     with open(summary_path, encoding="utf-8") as f:
         summary = json.load(f)
 
-    phase_dir = rm.get_results_path(model_name, dataset_size, phase)
+    phase_dir = rm.get_results_path(model_name, dataset_size, phase, version=version)
     phase_dir.mkdir(parents=True, exist_ok=True)
 
-    ckpt_root = CHECKPOINT_DIR / run_name
+    ckpt_root = CHECKPOINT_DIR / version / run_name
     checkpoints_meta = {
         "checkpoint_steps": summary.get("checkpoint_steps", []),
         "checkpoint_paths": {
@@ -188,14 +197,15 @@ def cmd_run_phase(args):
     from inference import ModelRunner
 
     model_cfg = _resolve_model(args.model, tag=args.tag)
+    version = getattr(args, "version", None) or PIPELINE_VERSION
     phase_key = f"phase{args.phase}"
     conditions = INFERENCE_CONDITIONS[phase_key]
     test_case_ids = simulator.list_test_cases()
     modes = ["fixed", "adaptive"] if args.both_modes else [args.mode]
 
     if args.phase == 1:
-        if rm.baseline_exists(model_cfg.name) and not args.force:
-            path = rm.get_results_path(model_cfg.name, None, 1)
+        if rm.baseline_exists(model_cfg.name, version=version) and not args.force:
+            path = rm.get_results_path(model_cfg.name, None, 1, version=version)
             print(f"Baseline for {model_cfg.name} already exists at {path}, skipping. Pass --force to regenerate.")
             return
         dataset_size = None
@@ -206,12 +216,12 @@ def cmd_run_phase(args):
         # check above. This is what makes `run-full`/`run-batch`/`run-all`
         # resume-safe: stopping mid-run and re-running the same command later
         # skips every already-completed phase instead of erroring out.
-        existing = rm.check_existing_run(model_cfg.name, dataset_size, args.phase)
+        existing = rm.check_existing_run(model_cfg.name, dataset_size, args.phase, version=version)
         if existing["has_content"] and not args.force:
             print(f"Results for {model_cfg.name} n{dataset_size} phase{args.phase} already exist "
                   f"at {existing['path']}, skipping. Pass --force to regenerate.")
             return
-        _write_training_meta(model_cfg.name, dataset_size, args.phase)
+        _write_training_meta(model_cfg.name, dataset_size, args.phase, version=version)
 
     runner = ModelRunner(model_cfg, adapter_path=args.checkpoint)
 
@@ -242,7 +252,7 @@ def cmd_run_phase(args):
                         related = None
                         if args.phase != 1:
                             transcripts_dir = rm.get_results_path(
-                                model_cfg.name, dataset_size, args.phase, "transcripts"
+                                model_cfg.name, dataset_size, args.phase, "transcripts", version=version
                             )
                             related = []
                             for sibling_path in transcripts_dir.glob(f"{test_case_id}_*.json"):
@@ -251,15 +261,15 @@ def cmd_run_phase(args):
                                 sibling_meta = sibling["metadata"]
                                 if sibling_meta.get("condition") != condition:
                                     related.append(sibling)
-                        judge_runs = judge.score_transcript(result, related_records=related)
+                        scoring = judge.score_transcript(result, related_records=related)
 
                         if args.phase == 1:
                             baseline_entries.append({
                                 "metadata": result["metadata"], "transcript": result["transcript"],
-                                "judge_runs": judge_runs,
+                                **scoring,
                             })
                         else:
-                            phase_dir = rm.get_results_path(model_cfg.name, dataset_size, args.phase)
+                            phase_dir = rm.get_results_path(model_cfg.name, dataset_size, args.phase, version=version)
                             transcripts_dir = phase_dir / "transcripts"
                             transcripts_dir.mkdir(parents=True, exist_ok=True)
                             transcript_path = transcripts_dir / f"{test_case_id}_{condition}_{mode}.json"
@@ -267,7 +277,8 @@ def cmd_run_phase(args):
                                 json.dump(result, f, indent=2)
                             rm.append_scores_entry(
                                 model_cfg.name, dataset_size, args.phase,
-                                {"metadata": result["metadata"], "judge_runs": judge_runs},
+                                {"metadata": result["metadata"], **scoring},
+                                version=version,
                             )
 
                         num_succeeded += 1
@@ -289,7 +300,7 @@ def cmd_run_phase(args):
                     # already-completed conversation. save_baseline() is a full
                     # overwrite of the one baseline file, so re-calling it here
                     # with everything accumulated so far is safe and idempotent.
-                    rm.save_baseline(model_cfg.name, baseline_entries)
+                    rm.save_baseline(model_cfg.name, baseline_entries, version=version)
 
                 # num_succeeded (not len(test_case_ids)) — a manifest entry
                 # must reflect what actually landed in scores.json/baseline,
@@ -300,17 +311,17 @@ def cmd_run_phase(args):
                 # results as done — this bit us three times in one run
                 # before being caught here.
                 if args.phase == 1:
-                    path_for_manifest = rm.get_results_path(model_cfg.name, None, 1)
+                    path_for_manifest = rm.get_results_path(model_cfg.name, None, 1, version=version)
                 else:
-                    path_for_manifest = rm.get_results_path(model_cfg.name, dataset_size, args.phase)
+                    path_for_manifest = rm.get_results_path(model_cfg.name, dataset_size, args.phase, version=version)
                 entry = rm.build_manifest_entry(
                     model_cfg.name, dataset_size, args.phase, condition, path_for_manifest, num_succeeded,
                 )
-                rm.append_manifest_entry(entry)
+                rm.append_manifest_entry(entry, version=version)
                 print(f"[manifest] appended {entry['run_id']} ({num_succeeded}/{len(test_case_ids)} succeeded)")
 
     if args.phase == 1:
-        baseline_path = rm.save_baseline(model_cfg.name, baseline_entries)
+        baseline_path = rm.save_baseline(model_cfg.name, baseline_entries, version=version)
         print(f"Baseline saved to {baseline_path}")
 
     if failed_runs:
@@ -321,7 +332,7 @@ def cmd_run_phase(args):
 
     import report
 
-    print(json.dumps(report.run(), indent=2))
+    print(json.dumps(report.run(version=version), indent=2))
 
     if failed_runs:
         # Raised (not just printed) so callers like cmd_run_all's run_step
@@ -344,6 +355,7 @@ def cmd_run_all(args):
 
     model_cfg = _resolve_model(args.model, tag=args.tag)
     dataset_size = args.num_samples if args.num_samples is not None else DataConfig().num_samples
+    version = getattr(args, "version", None) or PIPELINE_VERSION
 
     def make_run_phase_args(phase, checkpoint=None):
         # Pass the base (untagged) model name + tag separately, not
@@ -352,7 +364,7 @@ def cmd_run_all(args):
         return argparse.Namespace(
             phase=phase, model=args.model, checkpoint=checkpoint, mode=args.mode,
             both_modes=args.both_modes, dataset_size=None if phase == 1 else dataset_size,
-            force=args.force, tag=args.tag,
+            force=args.force, tag=args.tag, version=version,
         )
 
     steps_ok = {}
@@ -373,7 +385,7 @@ def cmd_run_all(args):
         # Only genuine work (real training/testing, always seconds-to-hours)
         # is worth timing.
         if duration >= 2.0:
-            _append_timing(model_cfg.name, dataset_size, step_name, duration, status)
+            _append_timing(model_cfg.name, dataset_size, step_name, duration, status, version=version)
         if steps_ok[step_name]:
             print(f"[run-all] finished {step_name} ({duration:.1f}s)")
         else:
@@ -384,7 +396,8 @@ def cmd_run_all(args):
     ckpt2 = None
     def _train_phase2():
         nonlocal ckpt2
-        summary = train.run(2, model_cfg=model_cfg, data_cfg=DataConfig(num_samples=dataset_size), force=args.force)
+        summary = train.run(2, model_cfg=model_cfg, data_cfg=DataConfig(num_samples=dataset_size),
+                             force=args.force, version=version)
         ckpt2 = summary["final_checkpoint"]
     run_step("train_phase2", _train_phase2)
 
@@ -397,7 +410,8 @@ def cmd_run_all(args):
     ckpt3 = None
     def _train_phase3():
         nonlocal ckpt3
-        summary = train.run(3, model_cfg=model_cfg, data_cfg=DataConfig(num_samples=dataset_size), force=args.force)
+        summary = train.run(3, model_cfg=model_cfg, data_cfg=DataConfig(num_samples=dataset_size),
+                             force=args.force, version=version)
         ckpt3 = summary["final_checkpoint"]
     run_step("train_phase3", _train_phase3)
 
@@ -429,6 +443,7 @@ def cmd_run_batch(args):
         sub_args = argparse.Namespace(
             model=model_name, num_samples=args.num_samples, tag=args.tag,
             mode=args.mode, both_modes=args.both_modes, force=args.force,
+            version=getattr(args, "version", None),
         )
         try:
             cmd_run_all(sub_args)
@@ -448,7 +463,7 @@ def cmd_run_batch(args):
         print(f"  {status:16s} {model_name}")
 
 
-def cmd_run_phase1_batch(model_names, tag):
+def cmd_run_phase1_batch(model_names, tag, version=None):
     """Runs (or skips, if already done) phase-1 baseline for every listed
     model, one after another. Baseline is dataset-size-independent and needs
     no training, so this is fast — pulling it into its own pass up front
@@ -459,7 +474,7 @@ def cmd_run_phase1_batch(model_names, tag):
         print(f"\n[run-full] ----- phase1 baseline: {model_name} -----")
         args = argparse.Namespace(
             phase=1, model=model_name, checkpoint=None, mode="adaptive",
-            both_modes=False, dataset_size=None, force=False, tag=tag,
+            both_modes=False, dataset_size=None, force=False, tag=tag, version=version,
         )
         try:
             cmd_run_phase(args)
@@ -488,14 +503,15 @@ def cmd_run_full(args):
             print(f"[run-full] running data-prep for num_samples={num_samples}")
             data_prep.run(cfg)
 
+    version = getattr(args, "version", None)
     model_names = [m.strip() for m in args.models.split(",") if m.strip()]
-    cmd_run_phase1_batch(model_names, args.tag)
+    cmd_run_phase1_batch(model_names, args.tag, version=version)
 
     for num_samples in sizes:
         print(f"\n[run-full] ########## num_samples={num_samples} ##########")
         batch_args = argparse.Namespace(
             models=args.models, num_samples=num_samples, tag=args.tag,
-            mode=args.mode, both_modes=args.both_modes, force=args.force,
+            mode=args.mode, both_modes=args.both_modes, force=args.force, version=version,
         )
         cmd_run_batch(batch_args)
 
@@ -503,11 +519,103 @@ def cmd_run_full(args):
         import generate_charts
 
         print(f"\n[run-full] ########## generating charts ##########")
-        generate_charts.run(dataset_sizes=sizes)
+        generate_charts.run(dataset_sizes=sizes, version=version)
+
+
+def cmd_run_v3(args):
+    """The v3 'one command' — runs the whole new pipeline generation end to
+    end for every model: preflight gates (chat-template manual-review gate,
+    target_modules/rank/trainable-pct gate reusing lora_target_module_diagnostic.py,
+    sequence-length audit, batch-size-table assertion), then — only for
+    models that pass every gate — phase2 -> phase3 training (now rank-tiered
+    and batched, see config.RANK_TIERS/BATCH_CONFIG) with checkpoint-eval
+    + best-checkpoint selection after each phase, then finally version-aware
+    charts + report. A model that fails preflight is marked BLOCKED and
+    skipped (with the reason printed) rather than aborting the whole run —
+    same "one bad model doesn't kill the batch" pattern as run-batch."""
+    import preflight
+    import checkpoint_eval
+    import generate_charts
+    import report
+
+    version = "v3"
+    dataset_size = args.dataset_size
+    model_cfgs = MODELS_UNDER_TEST
+    if args.models:
+        wanted = {m.strip() for m in args.models.split(",")}
+        model_cfgs = [m for m in model_cfgs if m.name in wanted]
+    if not model_cfgs:
+        raise SystemExit("No models selected — check --models.")
+
+    data_cfg = DataConfig(num_samples=dataset_size)
+    print(f"\n[run-v3] ########## preflight: {len(model_cfgs)} model(s) ##########")
+    preflight_results = preflight.run_preflight(
+        model_cfgs, data_cfg, version, reviewed_templates=args.reviewed_templates
+    )
+
+    ready_models = [m for m in model_cfgs if not preflight_results[m.name].blocked]
+    blocked_models = [m for m in model_cfgs if preflight_results[m.name].blocked]
+    print(f"\n[run-v3] preflight done — READY: {[m.name for m in ready_models]}")
+    if blocked_models:
+        print(f"[run-v3] BLOCKED (skipped from training): {[m.name for m in blocked_models]}")
+        for m in blocked_models:
+            print(f"  - {m.name}: {preflight_results[m.name].block_reasons}")
+
+    model_status = {}
+    for model_cfg in ready_models:
+        print(f"\n[run-v3] ===== {model_cfg.name} =====")
+        run_all_status = "OK"
+        try:
+            run_all_args = argparse.Namespace(
+                model=model_cfg.name, num_samples=dataset_size, tag=None,
+                mode="adaptive", both_modes=False, force=args.force, version=version,
+            )
+            cmd_run_all(run_all_args)
+        except SystemExit:
+            # cmd_run_all raises when ANY test case in test_phase2/3 fails
+            # (e.g. a single flaky judge call), even if training itself
+            # succeeded cleanly. checkpoint-eval below only depends on
+            # checkpoints existing on disk — it must still run in that case,
+            # not be skipped just because full-suite test scoring hit one
+            # unrelated flake.
+            run_all_status = "PARTIAL_FAILURE (see run-all step log above)"
+        except Exception as exc:
+            run_all_status = f"FAILED: {type(exc).__name__}: {exc}"
+            print(f"[run-v3] {model_cfg.name} run-all FAILED: {type(exc).__name__}: {exc}")
+
+        checkpoint_eval_notes = []
+        for phase in (2, 3):
+            try:
+                checkpoint_eval.run_checkpoint_eval_for_run(model_cfg, phase, dataset_size, version=version)
+            except FileNotFoundError as exc:
+                note = f"phase{phase} checkpoint-eval skipped: {exc}"
+                checkpoint_eval_notes.append(note)
+                print(f"[run-v3] {model_cfg.name} {note}")
+            except Exception as exc:
+                note = f"phase{phase} checkpoint-eval FAILED: {type(exc).__name__}: {exc}"
+                checkpoint_eval_notes.append(note)
+                print(f"[run-v3] {model_cfg.name} {note}")
+
+        model_status[model_cfg.name] = (
+            run_all_status if run_all_status == "OK" and not checkpoint_eval_notes
+            else f"{run_all_status}; {'; '.join(checkpoint_eval_notes)}" if checkpoint_eval_notes
+            else run_all_status
+        )
+
+    if not args.no_charts:
+        print(f"\n[run-v3] ########## generating charts/report ##########")
+        generate_charts.run(dataset_sizes=[dataset_size], version=version)
+        print(json.dumps(report.run(version=version), indent=2))
+
+    print(f"\n[run-v3] FINAL SUMMARY (dataset_size={dataset_size}):")
+    for m in blocked_models:
+        print(f"  {'BLOCKED':22s} {m.name}")
+    for name, status in model_status.items():
+        print(f"  {status:22s} {name}")
 
 
 def cmd_manifest(args):
-    entries = rm.load_manifest()
+    entries = rm.load_manifest(version=getattr(args, "version", None))
     if not entries:
         print("Manifest is empty — no runs recorded yet.")
         return
@@ -545,6 +653,7 @@ def build_parser():
                     help="Must match what you passed to data_prep.py --num-samples.")
     p.add_argument("--tag", default=None, help="Appends '-{tag}' to the model name for checkpoint naming.")
     p.add_argument("--force", action="store_true", help="Redo training even if a completed checkpoint already exists.")
+    p.add_argument("--version", default=None, help="Pipeline generation to write under (defaults to config.PIPELINE_VERSION).")
     p.set_defaults(func=cmd_train)
 
     p = sub.add_parser("inference")
@@ -571,6 +680,7 @@ def build_parser():
     p = sub.add_parser("report")
     p.add_argument("--legacy-scores-dir", default=None)
     p.add_argument("--out", default=None)
+    p.add_argument("--version", default=None, help="Pipeline generation to report on (defaults to config.PIPELINE_VERSION).")
     p.set_defaults(func=cmd_report)
 
     p = sub.add_parser("run-phase", help="Convenience: simulate+score+report across all test cases/conditions for one phase.")
@@ -585,9 +695,11 @@ def build_parser():
     p.add_argument("--force", action="store_true",
                     help="Overwrite an existing phase result (or regenerate an existing baseline) instead of skipping/erroring.")
     p.add_argument("--tag", default=None, help="Appends '-{tag}' to the model name for results naming.")
+    p.add_argument("--version", default=None, help="Pipeline generation to write under (defaults to config.PIPELINE_VERSION).")
     p.set_defaults(func=cmd_run_phase)
 
-    p = sub.add_parser("manifest", help="Print results/manifest.jsonl as a table.")
+    p = sub.add_parser("manifest", help="Print results/{version}/manifest.jsonl as a table.")
+    p.add_argument("--version", default=None, help="Pipeline generation to read (defaults to config.PIPELINE_VERSION).")
     p.set_defaults(func=cmd_manifest)
 
     p = sub.add_parser(
@@ -603,6 +715,7 @@ def build_parser():
     p.add_argument("--mode", default="adaptive", choices=["adaptive", "fixed"])
     p.add_argument("--both-modes", action="store_true")
     p.add_argument("--force", action="store_true")
+    p.add_argument("--version", default=None, help="Pipeline generation to write under (defaults to config.PIPELINE_VERSION).")
     p.set_defaults(func=cmd_run_all)
 
     p = sub.add_parser(
@@ -615,6 +728,7 @@ def build_parser():
     p.add_argument("--mode", default="adaptive", choices=["adaptive", "fixed"])
     p.add_argument("--both-modes", action="store_true")
     p.add_argument("--force", action="store_true")
+    p.add_argument("--version", default=None, help="Pipeline generation to write under (defaults to config.PIPELINE_VERSION).")
     p.set_defaults(func=cmd_run_batch)
 
     p = sub.add_parser(
@@ -633,6 +747,7 @@ def build_parser():
     p.add_argument("--both-modes", action="store_true")
     p.add_argument("--force", action="store_true")
     p.add_argument("--no-charts", action="store_true", help="Skip chart generation at the end.")
+    p.add_argument("--version", default=None, help="Pipeline generation to write under (defaults to config.PIPELINE_VERSION).")
     p.set_defaults(func=cmd_run_full)
 
     p = sub.add_parser(
@@ -643,9 +758,27 @@ def build_parser():
     )
     p.add_argument("--models", required=True, help="Comma-separated model names.")
     p.add_argument("--tag", default=None)
+    p.add_argument("--version", default=None, help="Pipeline generation to write under (defaults to config.PIPELINE_VERSION).")
     p.set_defaults(func=lambda args: cmd_run_phase1_batch(
-        [m.strip() for m in args.models.split(",") if m.strip()], args.tag
+        [m.strip() for m in args.models.split(",") if m.strip()], args.tag, version=args.version
     ))
+
+    p = sub.add_parser(
+        "run-v3",
+        help="THE single command for the v3 pipeline generation: preflight gates (chat-template "
+             "manual-review, target_modules/rank, seq-length audit, batch-size assertion) for every "
+             "model, then phase2->phase3 training + checkpoint-eval + best-checkpoint selection for "
+             "every model that passes, then version-aware charts + report. Models that fail preflight "
+             "are marked BLOCKED and skipped rather than aborting the whole run.",
+    )
+    p.add_argument("--models", default=None, help="Comma-separated model names (default: every model in MODELS_UNDER_TEST).")
+    p.add_argument("--dataset-size", type=int, default=50, help="Passed to data_prep-derived phase2/3 datasets.")
+    p.add_argument("--reviewed-templates", action="store_true",
+                    help="Confirms you've manually read every chat-template output preflight prints — "
+                         "required (or an interactive y/n prompt fires) before any model proceeds to training.")
+    p.add_argument("--force", action="store_true")
+    p.add_argument("--no-charts", action="store_true", help="Skip chart/report generation at the end.")
+    p.set_defaults(func=cmd_run_v3)
 
     return parser
 

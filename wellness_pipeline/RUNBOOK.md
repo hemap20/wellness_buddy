@@ -5,10 +5,73 @@ All commands assume you're in `wellness_pipeline/` with the venv active.
 ```bash
 cd /Users/hemapunyamoorty/Desktop/chat_bot/wellness_pipeline
 source .venv/bin/activate
-export GEMINI_API_KEY="your-key"   # required for simulate/score — get one at https://aistudio.google.com/apikey
+# GEMINI_API_KEY and HF_TOKEN live in ../.env (chat_bot/.env), not this directory:
+export $(grep -E "^(GEMINI_API_KEY|HF_TOKEN)" ../.env | xargs)
 ```
 
 To use Claude instead of Gemini for simulator/judge: set `provider: "anthropic"` on `SimulatorConfig`/`JudgeConfig` in `config.py` and `export ANTHROPIC_API_KEY=...` instead.
+
+---
+
+## v3 pipeline (current generation — start here)
+
+`results/`, `checkpoints/`, `logs/`, `charts/`, and `reports/` are now split into
+`v1/`/`v2/`/`v3/` subtrees (see `results_manager.py::get_results_path` /
+`get_version_root`) — each pipeline generation lives in its own directory,
+per-model dirnames suffixed `_{version}` (e.g. `dialogpt-small_v3`), so
+different generations never collide or overwrite each other on disk. `v1`
+and `v2` are past generations (migrated, not written to anymore — see
+`migrate_to_versioned_dirs.py`); `v3` is current (`config.PIPELINE_VERSION`).
+
+**v3 adds, relative to v2:**
+- **Per-model-tier LoRA rank/alpha** (`config.RANK_TIERS`/`rank_alpha_for()`) —
+  replaces the single shared `lora_r=8`/`lora_alpha=16`. small (<350M
+  params) → r=8/α=16, mid (1-4B) → r=16/α=32, large (7-8B) → r=32/α=64.
+- **Real batching** (`config.BATCH_CONFIG`/`batch_settings_for()`) — training
+  previously processed one example at a time despite having a
+  `per_device_train_batch_size` field; it's now actually used, with padding/
+  attention-masking via `train.py::collate_batch`, targeting an identical
+  effective batch size of 8 across every model.
+- **Preflight gates** (`preflight.py`) that BLOCK a model from training
+  rather than just warning: chat-template validation (prints the formatted
+  output for manual review — automated special-token check alone is not
+  sufficient, see `config.EXPECTED_SPECIAL_TOKENS`), the target_modules/
+  rank/trainable-% gate (reuses `lora_target_module_diagnostic.py`), and a
+  sequence-length audit against `TrainingConfig.max_seq_length` (2048).
+- **Checkpoint-based eval + best-checkpoint selection** (`checkpoint_eval.py`)
+  — runs the existing simulator+judge eval suite against each of the 4
+  checkpoint fractions (not just `final`), and picks an earlier checkpoint
+  over the final one if `boundary_holding`/`crisis_handling` regressed more
+  than `config.SAFETY_REGRESSION_THRESHOLD` (1.0pt) from its own max.
+
+**The one command** — runs preflight → train (phase2→phase3) →
+checkpoint-eval → charts/report, for every model that passes preflight:
+
+```bash
+python3 orchestrator.py run-v3 --dataset-size 50 --reviewed-templates
+# --models dialogpt-small,qwen3-8b   to scope to specific models
+# --reviewed-templates confirms you've read every printed chat-template
+#   output — omit it and you'll get an interactive y/N prompt instead (or,
+#   non-interactively, every model gets BLOCKED until you pass the flag)
+```
+
+A model that fails a gate is marked BLOCKED (reason printed) and skipped —
+the rest of the batch still runs. `gemma-3-1b-it` (gated, unverified access)
+is expected to BLOCKED at the load step unless you've completed its HF
+access setup (see section 9 below).
+
+Diagnose target_modules/rank issues for one model standalone (same logic
+`preflight.py` calls into):
+```bash
+python3 lora_target_module_diagnostic.py --models dialogpt-small
+```
+
+Every existing command below (`train.py`, `orchestrator.py train/run-phase/
+run-all/run-batch/run-full`, `report.py`, `generate_charts.py`) now also
+accepts `--version` (defaults to `config.PIPELINE_VERSION`, currently `v3`)
+if you need to target a specific generation instead of the current one —
+e.g. `python3 report.py --version v2` to regenerate v2's report from its
+manifest.
 
 ---
 
@@ -37,13 +100,13 @@ cat data/phase3_pairs.jsonl   # fixed system prompt prepended
 python3 train.py --phase 2 --num-samples 50
 python3 train.py --phase 3 --num-samples 50
 
-cat checkpoints/dialogpt-small_phase2/train_summary.json
-cat checkpoints/dialogpt-small_phase3/train_summary.json
+cat checkpoints/v3/dialogpt-small_v3_n050_phase2/train_summary.json
+cat checkpoints/v3/dialogpt-small_v3_n050_phase3/train_summary.json
 ```
 
-Checkpoints (the actual weights) live at `checkpoints/{model}_n{size}_phase{N}/{step_N_pct_M,final}` — namespaced by dataset size (same `n050`/`n500` convention as `data/` and `results/`), so re-training the same model/phase at a different `--num-samples` never overwrites a previous run's weights. `run-phase` (step 6) copies the step numbers/paths and the loss curve from here into `results/` as metadata; the weights themselves are never duplicated there.
+Checkpoints (the actual weights) live at `checkpoints/{version}/{model}_{version}_n{size}_phase{N}/{step_N_pct_M,final}` — namespaced by pipeline version + dataset size (same `n050`/`n500` convention as `data/` and `results/`), so re-training the same model/phase at a different `--num-samples` or a different pipeline generation never overwrites a previous run's weights. `run-phase` (step 6) copies the step numbers/paths and the loss curve from here into `results/` as metadata; the weights themselves are never duplicated there. `train_summary.json` also now records `rank_tier`/`lora_r`/`lora_alpha`/`per_device_batch_size`/`gradient_accumulation_steps`/`effective_batch_size` for that run — see the v3 section above.
 
-> **Note:** the `dialogpt-small_phase2`/`gemma-4-e2b-it_phase2` (etc.) checkpoint dirs from earlier n050 runs predate this dataset-size namespacing fix and don't have the `_n050_` segment in their name — they're still valid and still referenced correctly by their original `run-phase`/`--adapter` commands below. Any *new* training run (including a fresh n050 retrain) will use the new `_n{size}_` naming.
+> **Historical note:** `v1`/`v2`-generation checkpoint dirs (some of which predate dataset-size namespacing entirely, e.g. `dialogpt-small_phase2` with no `_n050_` segment) were migrated into `checkpoints/v1/`/`checkpoints/v2/` by `migrate_to_versioned_dirs.py` — see them there, not at the top level, and don't expect them to follow the current naming convention.
 
 ## 3. Inference smoke test (no simulator/judge, just one generation)
 
@@ -102,20 +165,20 @@ python3 orchestrator.py run-phase --phase 2 --checkpoint checkpoints/dialogpt-sm
 ## 6. Inspect results
 
 ```bash
-python3 orchestrator.py manifest                                   # every run, as a table
-cat results/dialogpt-small/phase1_baseline.json                    # baseline: transcripts + judge_runs, all test cases/conditions in one file
-cat results/dialogpt-small/n050/phase2/scores.json                 # phase 2: every judge run for every test case/condition
-cat results/dialogpt-small/n050/phase2/checkpoints_meta.json       # step numbers + paths (not weights)
-cat results/dialogpt-small/n050/phase2/loss_curve.json
-ls results/dialogpt-small/n050/phase2/transcripts/
+python3 orchestrator.py manifest                                   # every run in the current version, as a table
+cat results/v3/dialogpt-small_v3/phase1_baseline.json               # baseline: transcripts + judge_runs, all test cases/conditions in one file
+cat results/v3/dialogpt-small_v3/n050/phase2/scores.json            # phase 2: every judge run for every test case/condition
+cat results/v3/dialogpt-small_v3/n050/phase2/checkpoints_meta.json  # step numbers + paths (not weights)
+cat results/v3/dialogpt-small_v3/n050/phase2/loss_curve.json
+ls results/v3/dialogpt-small_v3/n050/phase2/transcripts/
 ```
 
 ## 7. Aggregate report (reads the manifest, not the directory tree)
 
 ```bash
 python3 report.py
-cat reports/report_detail.csv     # one row per model × dataset_size × phase × condition × test_case
-cat reports/report_summary.csv    # aggregated per model × dataset_size × phase × condition
+cat reports/v3/report_detail.csv     # one row per model × dataset_size × phase × condition × test_case
+cat reports/v3/report_summary.csv    # aggregated per model × dataset_size × phase × condition
 ```
 
 `report.py` discovers everything via `results/manifest.jsonl`. For the old flat-dir debug runs from step 4 instead: `python3 report.py --legacy-scores-dir scores`.
@@ -153,7 +216,7 @@ python3 orchestrator.py run-phase --phase 1 --force
 
 ## 9. Testing a second (or third) model
 
-`MODELS_UNDER_TEST` in `config.py` is the list — currently `dialogpt-small`, `gemma-3-1b-it` (`google/gemma-3-1b-it`), and `gemma-4-e2b-it` (`google/gemma-4-E2B-it`). Every stage already takes `--model <name>`, so adding a model to that list is enough to run the *entire* pipeline against it with the exact same commands, just naming it:
+`MODELS_UNDER_TEST` in `config.py` is the list — currently 8 entries: `dialogpt-small`, `gemma-3-1b-it`, `gemma-4-e2b-it`, `starling-lm-7b-alpha`, `empathetic-qwen3-8b-jan`, `qwen3-8b`, `mistral-7b-instruct-v0.3`, `llama-3-8b`. `gemma-3-1b-it` is currently BLOCKED — gated repo, access not yet approved for the configured `HF_TOKEN` (confirmed by `preflight.py`/`lora_target_module_diagnostic.py`: it fails to load even with the token exported, unlike `mistral-7b-instruct-v0.3` and `llama-3-8b` which load fine with the same token). The other 7 are active/trained under v3. Every stage already takes `--model <name>`, so adding a model to that list is enough to run the *entire* pipeline against it with the exact same commands, just naming it:
 
 ```bash
 # gemma-3-1b-it is a GATED repo — one-time setup before anything else works:
@@ -213,25 +276,9 @@ The model's thinking segment (delimited by special tokens in its raw output) is 
 
 ## Known gaps / things to know before scaling up
 
-- **Sample efficiency isn't automated yet.** `train.py` saves checkpoints at 25/50/75/100% of steps (paths recorded in `checkpoints_meta.json`), but nothing loops over them to simulate+score each one automatically — `run-phase` only ever points at `final`. To get the efficiency curve, manually run step 4 against each `checkpoints/.../step_N_pct_M` path, then feed the scores into `metrics.py efficiency` against the matching entry in `phase1_baseline.json`.
-- **`system_prompt_dependency` only resolves once sibling conditions exist on disk.** `run-phase` looks for sibling transcripts under that phase's `transcripts/` folder as it goes — score a transcript before its siblings (matched/no_prompt/paraphrased for the same test case) exist and you'll get `"N/A"` for that dimension. Running the whole phase in one `run-phase` call (as above) avoids this.
-- **API volume**: `num_turns: 15` per test case × up to 3 conditions × 5 test cases × 3 judge runs per transcript adds up fast in Gemini calls. Do step 4 (single manual transcript) before a full `run-phase` to confirm your key/quota are good.
-- **`--dataset-size` is not auto-detected from the data files** — it defaults to `config.py`'s `DataConfig.num_samples`, which can drift from what you actually passed to `data_prep.py --num-samples`. Double check they match before a `run-phase` call, or the results folder will be mislabeled.
-- **`gemma-3-1b-it`'s `lora_target_modules` and chat-template behavior are unverified** — the repo is gated and couldn't be loaded in the environment this pipeline was built in. `model_utils.py` has a generic fallback if its chat template rejects a system-role turn (merges system content into the first user message and retries), but the actual template behavior hasn't been observed live. If the first real training run throws a LoRA target-module error, see the "Adding a third model" note in section 9.
-
-
-{
-  "count": 150,
-  "avg": 1.5185309327666665,
-  "p95": 2.419903268749999,
-  "p99": 2.826060713249994,
-  "transcripts_scanned": 10
-}
-
-{
-  "checkpoint_score": 3.2,
-  "baseline_score": 1.8,
-  "steps_or_examples": 20,
-  "delta": 1.4000000000000001,
-  "sample_efficiency": 0.07
-}
+- **Sample efficiency across checkpoints is now automated for v3** via `checkpoint_eval.py` (called automatically by `orchestrator.py run-v3`) — it runs the eval suite against each of the 4 checkpoint fractions (all 8 test cases, 1 condition, `judge_cfg.num_runs` overridden to `config.CHECKPOINT_EVAL_JUDGE_RUNS=1` to keep 4×7 evals affordable) and writes a trajectory report to `reports/v3/{model}_checkpoint_trajectory.md` + `.json`, including which checkpoint was selected as "best" and why. `metrics.py efficiency` is still there for a one-off manual computation, but you shouldn't need it for routine v3 runs anymore.
+- **`system_prompt_dependency` only resolves once sibling conditions exist on disk.** `run-phase` looks for sibling transcripts under that phase's `transcripts/` folder as it goes — score a transcript before its siblings (matched/no_prompt/paraphrased for the same test case) exist and you'll get `"N/A"` for that dimension. Running the whole phase in one `run-phase` call (as above) avoids this. Checkpoint-eval's cheaper 1-condition passes always get `"N/A"` here — expected, not a bug (see checkpoint_eval.py's docstring).
+- **API volume**: `num_turns: 20` per test case × up to 3 conditions × 8 test cases × 3 judge runs per transcript adds up fast in Gemini calls, and `run-v3` multiplies that across every model in the batch (plus 4 cheaper checkpoint-eval passes each). Do step 4 (single manual transcript) before a full `run-phase`/`run-v3` to confirm your key/quota are good, and scope `run-v3 --models` to one model first (as we did for the initial v3 smoke test) before running the full 7-model batch.
+- **`--dataset-size` is not auto-detected from the data files** — it defaults to `config.py`'s `DataConfig.num_samples`, which can drift from what you actually passed to `data_prep.py --num-samples`. Double check they match before a `run-phase`/`run-v3` call, or the results folder will be mislabeled.
+- **`gemma-3-1b-it` is currently BLOCKED, confirmed via live diagnostic** (not just "unverified" as before) — `HF_TOKEN` is valid and works for `mistral-7b-instruct-v0.3`/`llama-3-8b`, but `google/gemma-3-1b-it` still returns a gated-repo error for this account. Needs the HF access request approved before it can be diagnosed or trained at all; `preflight.py`/`run-v3` will keep reporting it BLOCKED at the load step until then.
+- **gemma-4-e2b-it's LoRA coverage is intentionally asymmetric** — its text decoder has cross-layer KV-sharing (`config.text_config.num_kv_shared_layers=20`): 20 of 35 decoder layers have no `k_proj`/`v_proj` modules at all (confirmed via `named_modules()` inspection), so LoRA only adapts `q_proj`/`o_proj` there vs. full q/k/v/o in the other 15 layers. This is captured in `config.KNOWN_ARCHITECTURAL_ASYMMETRIES` and surfaced as "expected-asymmetric" (not BLOCKED) by both `preflight.py` and `lora_target_module_diagnostic.py` — don't try to "fix" it by changing `target_modules` for this model.

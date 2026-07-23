@@ -29,7 +29,7 @@ import statistics
 from pathlib import Path
 from typing import Optional
 
-from config import REPORT_DIR, SCORE_DIR
+from config import PIPELINE_VERSION, REPORT_DIR, SCORE_DIR
 import results_manager as rm
 
 DIMENSIONS = [
@@ -61,19 +61,19 @@ def _phase_to_int(phase) -> int:
     return int(str(phase).removeprefix("phase"))
 
 
-def _load_training_meta(model: str, dataset_size, phase: int) -> dict:
+def _load_training_meta(model: str, dataset_size, phase: int, version: str = None) -> dict:
     """val_loss (final checkpoint) + possible_overfitting, read from
     checkpoints_meta.json. None/False for phase 1 (no training) or if that
     file doesn't exist yet."""
     if phase == 1 or dataset_size is None:
         return {"val_loss_final": None, "possible_overfitting": False}
-    meta_path = rm.get_results_path(model, dataset_size, phase) / "checkpoints_meta.json"
+    meta_path = rm.get_results_path(model, dataset_size, phase, version=version) / "checkpoints_meta.json"
     if not meta_path.exists():
         return {"val_loss_final": None, "possible_overfitting": False}
     with open(meta_path, encoding="utf-8") as f:
         meta = json.load(f)
     val_loss_final = None
-    curve_path = rm.get_results_path(model, dataset_size, phase) / "loss_curve.json"
+    curve_path = rm.get_results_path(model, dataset_size, phase, version=version) / "loss_curve.json"
     if curve_path.exists():
         with open(curve_path, encoding="utf-8") as f:
             curve = json.load(f)
@@ -83,8 +83,9 @@ def _load_training_meta(model: str, dataset_size, phase: int) -> dict:
     return {"val_loss_final": val_loss_final, "possible_overfitting": meta.get("possible_overfitting", False)}
 
 
-def _row_from_entry(meta: dict, runs: list[dict], dataset_size, phase_int: int, source_path: str) -> dict:
-    training_meta = _load_training_meta(meta.get("model_name"), dataset_size, phase_int)
+def _row_from_entry(meta: dict, runs: list[dict], dataset_size, phase_int: int, source_path: str,
+                     qualitative: Optional[dict] = None, version: str = None) -> dict:
+    training_meta = _load_training_meta(meta.get("model_name"), dataset_size, phase_int, version=version)
     row = {
         "model": meta.get("model_name"),
         "dataset_size": dataset_size,
@@ -97,6 +98,10 @@ def _row_from_entry(meta: dict, runs: list[dict], dataset_size, phase_int: int, 
         "val_loss_final": training_meta["val_loss_final"],
         "possible_overfitting": training_meta["possible_overfitting"],
         "source_file": source_path,
+        # None for entries scored before the qualitative pass was added —
+        # see backfill_qualitative.py to fill these in retroactively.
+        "strengths": (qualitative or {}).get("strengths"),
+        "weaknesses": (qualitative or {}).get("weaknesses"),
     }
     for dim in DIMENSIONS:
         row[f"{dim}_mean"] = _mean_score(runs, dim)
@@ -108,11 +113,11 @@ def _row_from_entry(meta: dict, runs: list[dict], dataset_size, phase_int: int, 
 # Manifest-driven (primary)
 # ---------------------------------------------------------------------------
 
-def build_rows_from_manifest() -> list[dict]:
+def build_rows_from_manifest(version: str = None) -> list[dict]:
     rows = []
     seen_baseline_models = set()
 
-    for manifest_entry in rm.load_manifest():
+    for manifest_entry in rm.load_manifest(version=version):
         model = manifest_entry["model"]
         phase = manifest_entry["phase"]
         dataset_size = manifest_entry["dataset_size"]
@@ -121,17 +126,17 @@ def build_rows_from_manifest() -> list[dict]:
             if model in seen_baseline_models:
                 continue  # baseline file already fully expanded from an earlier manifest line
             seen_baseline_models.add(model)
-            baseline = rm.load_baseline(model)
+            baseline = rm.load_baseline(model, version=version)
             if not baseline:
                 continue
             for entry in baseline["results"]:
                 rows.append(_row_from_entry(entry["metadata"], entry["judge_runs"], None, _phase_to_int(phase),
-                                             manifest_entry["path"]))
+                                             manifest_entry["path"], entry.get("qualitative"), version=version))
         else:
-            scores = rm.load_scores(model, dataset_size, phase)
+            scores = rm.load_scores(model, dataset_size, phase, version=version)
             for entry in scores:
                 rows.append(_row_from_entry(entry["metadata"], entry["judge_runs"], dataset_size, _phase_to_int(phase),
-                                             manifest_entry["path"]))
+                                             manifest_entry["path"], entry.get("qualitative"), version=version))
 
     # de-dupe phase2/3 rows in case multiple manifest lines point at the same
     # scores.json (one manifest line per condition, but scores.json accumulates
@@ -153,7 +158,8 @@ def build_rows_legacy(scores_dir: str) -> list[dict]:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         rows.append(_row_from_entry(data["metadata"], data["judge_runs"], None,
-                                     _phase_to_int(data["metadata"].get("phase", 1)), path))
+                                     _phase_to_int(data["metadata"].get("phase", 1)), path,
+                                     data.get("qualitative")))
     return rows
 
 
@@ -184,6 +190,53 @@ def build_summary(rows: list[dict]) -> list[dict]:
     return summary
 
 
+def build_qualitative_report(rows: list[dict]) -> dict:
+    """Per-model roll-up of every transcript's judge-generated strengths/
+    weaknesses. This lists everything observed rather than re-synthesizing
+    down to a single "the 3 strengths of this model" via another LLM call —
+    report.py only reads what upstream stages already wrote (see module
+    docstring), so collating is as far as this stage goes. Skimming the list
+    per model is quick since each entry already cites a specific transcript."""
+    by_model: dict[str, list[dict]] = {}
+    for row in rows:
+        if not row.get("strengths") and not row.get("weaknesses"):
+            continue
+        by_model.setdefault(row["model"], []).append({
+            "dataset_size": row["dataset_size"],
+            "phase": row["phase"],
+            "condition": row["condition"],
+            "test_case": row["test_case"],
+            "strengths": row.get("strengths") or [],
+            "weaknesses": row.get("weaknesses") or [],
+        })
+
+    report = {}
+    for model, entries in sorted(by_model.items()):
+        report[model] = {
+            "num_transcripts_with_qualitative": len(entries),
+            "observations": entries,
+        }
+    return report
+
+
+def write_qualitative_markdown(qual_report: dict, path: Path) -> None:
+    lines = ["# Qualitative judge observations, per model\n"]
+    if not qual_report:
+        lines.append("No transcripts have qualitative (strengths/weaknesses) data yet — "
+                      "run `python backfill_qualitative.py` to fill this in for existing results.\n")
+    for model, data in qual_report.items():
+        lines.append(f"## {model} ({data['num_transcripts_with_qualitative']} transcripts)\n")
+        for obs in data["observations"]:
+            label = f"n={obs['dataset_size']} {obs['phase']} {obs['condition']} {obs['test_case']}"
+            lines.append(f"### {label}")
+            lines.append("**Strengths:**")
+            lines.extend(f"- {s}" for s in obs["strengths"])
+            lines.append("\n**Weaknesses:**")
+            lines.extend(f"- {w}" for w in obs["weaknesses"])
+            lines.append("")
+    path.write_text("\n".join(lines))
+
+
 def write_csv(rows: list[dict], path: Path) -> None:
     if not rows:
         path.write_text("")
@@ -195,29 +248,40 @@ def write_csv(rows: list[dict], path: Path) -> None:
         writer.writerows(rows)
 
 
-def run(legacy_scores_dir: str = None, out_prefix: str = None) -> dict:
-    out_prefix = out_prefix or str(REPORT_DIR / "report")
-    rows = build_rows_legacy(legacy_scores_dir) if legacy_scores_dir else build_rows_from_manifest()
+def run(legacy_scores_dir: str = None, out_prefix: str = None, version: str = None) -> dict:
+    version = version or PIPELINE_VERSION
+    out_prefix = out_prefix or str(REPORT_DIR / version / "report")
+    Path(out_prefix).parent.mkdir(parents=True, exist_ok=True)
+    rows = build_rows_legacy(legacy_scores_dir) if legacy_scores_dir else build_rows_from_manifest(version=version)
     summary = build_summary(rows)
 
     detail_json = Path(f"{out_prefix}_detail.json")
     detail_csv = Path(f"{out_prefix}_detail.csv")
     summary_json = Path(f"{out_prefix}_summary.json")
     summary_csv = Path(f"{out_prefix}_summary.csv")
+    qualitative_json = Path(f"{out_prefix}_qualitative.json")
+    qualitative_md = Path(f"{out_prefix}_qualitative.md")
 
     detail_json.write_text(json.dumps(rows, indent=2))
     write_csv(rows, detail_csv)
     summary_json.write_text(json.dumps(summary, indent=2))
     write_csv(summary, summary_csv)
 
+    qual_report = build_qualitative_report(rows)
+    qualitative_json.write_text(json.dumps(qual_report, indent=2))
+    write_qualitative_markdown(qual_report, qualitative_md)
+
     return {
         "source": "legacy_scores_dir" if legacy_scores_dir else "manifest",
         "num_detail_rows": len(rows),
         "num_summary_rows": len(summary),
+        "num_models_with_qualitative": len(qual_report),
         "detail_json": str(detail_json),
         "detail_csv": str(detail_csv),
         "summary_json": str(summary_json),
         "summary_csv": str(summary_csv),
+        "qualitative_json": str(qualitative_json),
+        "qualitative_md": str(qualitative_md),
     }
 
 
@@ -227,9 +291,10 @@ def main():
                          help=f"Use the old flat-directory glob instead of results/manifest.jsonl "
                               f"(e.g. '{SCORE_DIR}' for standalone simulator.py/judge.py debug runs).")
     parser.add_argument("--out", default=None, help="Output path prefix (no extension)")
+    parser.add_argument("--version", default=PIPELINE_VERSION, help="Pipeline generation to report on (v1/v2/v3).")
     args = parser.parse_args()
 
-    result = run(args.legacy_scores_dir, args.out)
+    result = run(args.legacy_scores_dir, args.out, version=args.version)
     print(json.dumps(result, indent=2))
 
 

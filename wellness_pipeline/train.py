@@ -36,8 +36,11 @@ from config import (
     LOG_DIR,
     MODELS_UNDER_TEST,
     ModelUnderTest,
+    PIPELINE_VERSION,
     SHARED_TRAINING_CONFIG,
     TrainingConfig,
+    batch_settings_for,
+    rank_alpha_for,
 )
 from model_utils import build_training_text, load_tokenizer_and_model, resolve_device
 from results_manager import format_dataset_size
@@ -85,6 +88,33 @@ def build_example_tensors(tokenizer, messages: list[dict], max_length: int):
     n_prompt_tokens = min(len(prompt_ids), len(full_ids))
     labels[:n_prompt_tokens] = -100  # mask everything except assistant tokens
     return input_ids, labels
+
+
+def collate_batch(batch: list, pad_token_id: int):
+    """Pads a list of (input_ids, labels) tensors to the batch's max length.
+    input_ids padded with pad_token_id, labels padded with -100 (HF's default
+    CrossEntropyLoss ignore_index — so padded positions contribute exactly
+    zero to the loss, identical in effect to how prompt tokens are already
+    masked). attention_mask is 0 over padding, 1 over real tokens, so the
+    model's attention itself also never attends into padding.
+
+    Returns (input_ids_batch, labels_batch, attention_mask_batch), each
+    shape (batch_size, max_len_in_batch).
+    """
+    import torch
+
+    max_len = max(ids.shape[0] for ids, _ in batch)
+    input_ids_batch = torch.full((len(batch), max_len), pad_token_id, dtype=torch.long)
+    labels_batch = torch.full((len(batch), max_len), -100, dtype=torch.long)
+    attention_mask_batch = torch.zeros((len(batch), max_len), dtype=torch.long)
+
+    for i, (ids, labels) in enumerate(batch):
+        n = ids.shape[0]
+        input_ids_batch[i, :n] = ids
+        labels_batch[i, :n] = labels
+        attention_mask_batch[i, :n] = 1
+
+    return input_ids_batch, labels_batch, attention_mask_batch
 
 
 def evaluate_avg_loss(model, examples: list, device: str) -> float:
@@ -137,13 +167,15 @@ def _load_training_state(ckpt_path: Path) -> dict:
 
 
 def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig = None,
-        data_cfg: DataConfig = None, force: bool = False, resume_from_checkpoint: Optional[str] = None) -> dict:
+        data_cfg: DataConfig = None, force: bool = False, resume_from_checkpoint: Optional[str] = None,
+        version: str = None, per_device_batch_size_override: int = None) -> dict:
     import torch
     from peft import LoraConfig, PeftModel, get_peft_model
 
     model_cfg = model_cfg or MODELS_UNDER_TEST[0]
     train_cfg = train_cfg or SHARED_TRAINING_CONFIG
     data_cfg = data_cfg or DataConfig()
+    version = version or PIPELINE_VERSION
 
     assert phase in (2, 3), "phase must be 2 or 3"
 
@@ -152,8 +184,11 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
     # it instead of re-downloading/re-training from scratch — this is what
     # lets `orchestrator.py run-full` be stopped and safely re-run later,
     # picking up at the next incomplete step rather than starting over.
-    run_name = f"{model_cfg.name}_{format_dataset_size(data_cfg.num_samples)}_phase{phase}"
-    existing_summary_path = CHECKPOINT_DIR / run_name / "train_summary.json"
+    # `version` is namespaced into both the run_name and the directory itself
+    # so different pipeline generations (v1/v2/v3) never collide on disk even
+    # when re-run against the same model/dataset_size/phase.
+    run_name = f"{model_cfg.name}_{version}_{format_dataset_size(data_cfg.num_samples)}_phase{phase}"
+    existing_summary_path = CHECKPOINT_DIR / version / run_name / "train_summary.json"
     if existing_summary_path.exists() and not force and not resume_from_checkpoint:
         with open(existing_summary_path, encoding="utf-8") as f:
             print(f"[train] {run_name} already trained — reusing existing checkpoint (pass force=True to redo).")
@@ -164,6 +199,24 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
     device = resolve_device(model_cfg.device)
     tokenizer, base_model = load_tokenizer_and_model(model_cfg)
     base_model = base_model.to(device)
+
+    # Per-model-tier LoRA rank/alpha (v3+) — replaces the single shared
+    # train_cfg.lora_r/lora_alpha. See config.RANK_TIERS/rank_alpha_for.
+    total_params = sum(p.numel() for p in base_model.parameters())
+    rank_tier, lora_r, lora_alpha = rank_alpha_for(total_params)
+
+    # Per-model batch size / gradient accumulation (v3+), targeting an
+    # identical effective batch size across every model — replaces the
+    # single shared train_cfg.per_device_train_batch_size/
+    # gradient_accumulation_steps. See config.BATCH_CONFIG/batch_settings_for.
+    # per_device_batch_size_override exists only for the isolated
+    # batching-correctness verification (comparing batch_size=1 against
+    # batch_size=N on the same model/data) — real runs never pass it.
+    if per_device_batch_size_override is not None:
+        per_device_batch_size = per_device_batch_size_override
+        gradient_accumulation_steps = 1
+    else:
+        per_device_batch_size, gradient_accumulation_steps, _ = batch_settings_for(model_cfg.name)
 
     # A tuple/list of exact names is PEFT's plain suffix-match mode; a single
     # string is instead treated as a full regex, needed when bare names alone
@@ -182,8 +235,8 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
         model = PeftModel.from_pretrained(base_model, resume_from_checkpoint, is_trainable=True)
     else:
         lora_config = LoraConfig(
-            r=train_cfg.lora_r,
-            lora_alpha=train_cfg.lora_alpha,
+            r=lora_r,
+            lora_alpha=lora_alpha,
             lora_dropout=train_cfg.lora_dropout,
             target_modules=target_modules,
             task_type="CAUSAL_LM",
@@ -194,16 +247,19 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
     examples = [build_example_tensors(tokenizer, r["messages"], train_cfg.max_seq_length) for r in records]
     val_examples = [build_example_tensors(tokenizer, r["messages"], train_cfg.max_seq_length) for r in val_records]
 
-    total_steps = len(examples) * train_cfg.num_train_epochs
+    num_batches_per_epoch = -(-len(examples) // per_device_batch_size)  # ceil div — last batch may be smaller
+    total_steps = num_batches_per_epoch * train_cfg.num_train_epochs
     checkpoint_steps = sorted({max(1, round(total_steps * f)) for f in train_cfg.checkpoint_fractions})
 
-    # run_name already computed above (namespaced by dataset size — same
-    # "n050"/"n500" convention as data/ and results/ — so re-training the
-    # same model/phase at a different sample count never overwrites a
-    # previous run's checkpoints or loss log).
-    ckpt_root = CHECKPOINT_DIR / run_name
+    # run_name already computed above (namespaced by version + dataset size —
+    # same "n050"/"n500" convention as data/ and results/ — so re-training
+    # the same model/phase at a different sample count or pipeline generation
+    # never overwrites a previous run's checkpoints or loss log).
+    ckpt_root = CHECKPOINT_DIR / version / run_name
     ckpt_root.mkdir(parents=True, exist_ok=True)
-    loss_log_path = LOG_DIR / f"{run_name}_loss.jsonl"
+    log_dir = LOG_DIR / version
+    log_dir.mkdir(parents=True, exist_ok=True)
+    loss_log_path = log_dir / f"{run_name}_loss.jsonl"
 
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=train_cfg.learning_rate, weight_decay=train_cfg.weight_decay
@@ -237,28 +293,35 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
         loss_log_mode = "a"  # continue the existing log rather than truncating it
         print(f"[train] resuming {run_name} from step {step} ({resume_from_checkpoint})")
 
-    # Flattened (epoch, example_idx, input_ids, labels) sequence lets resume
-    # skip already-completed steps by slicing, instead of re-deriving epoch/
-    # example indices from a raw step count.
-    flat_examples = [
-        (epoch, example_idx, input_ids, labels)
+    # Flattened (epoch, batch_idx, batch) sequence lets resume skip already-
+    # completed steps by slicing, instead of re-deriving epoch/batch indices
+    # from a raw step count. Each batch is a list of (input_ids, labels)
+    # tuples of up to per_device_batch_size examples — the last batch in an
+    # epoch may be smaller if len(examples) doesn't divide evenly.
+    def _batches(example_list):
+        return [example_list[i:i + per_device_batch_size] for i in range(0, len(example_list), per_device_batch_size)]
+
+    flat_batches = [
+        (epoch, batch_idx, batch)
         for epoch in range(train_cfg.num_train_epochs)
-        for example_idx, (input_ids, labels) in enumerate(examples)
+        for batch_idx, batch in enumerate(_batches(examples))
     ]
 
     with open(loss_log_path, loss_log_mode, encoding="utf-8") as loss_log:
-        for epoch, example_idx, input_ids, labels in flat_examples[step:]:
+        for epoch, batch_idx, batch in flat_batches[step:]:
             if early_stopped:
                 break
             step += 1
-            input_ids_b = input_ids.unsqueeze(0).to(device)
-            labels_b = labels.unsqueeze(0).to(device)
+            input_ids_b, labels_b, attention_mask_b = collate_batch(batch, tokenizer.pad_token_id)
+            input_ids_b = input_ids_b.to(device)
+            labels_b = labels_b.to(device)
+            attention_mask_b = attention_mask_b.to(device)
 
-            outputs = model(input_ids=input_ids_b, labels=labels_b)
+            outputs = model(input_ids=input_ids_b, attention_mask=attention_mask_b, labels=labels_b)
             loss = outputs.loss
             loss.backward()
 
-            if step % train_cfg.gradient_accumulation_steps == 0:
+            if step % gradient_accumulation_steps == 0:
                 optimizer.step()
                 optimizer.zero_grad()
 
@@ -267,9 +330,10 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
             record = {
                 "step": step,
                 "epoch": epoch,
-                "example_idx": example_idx,
+                "batch_idx": batch_idx,
+                "batch_size": len(batch),
                 "loss": loss_value,
-                "examples_seen": step,  # batch size 1
+                "examples_seen": step * per_device_batch_size,
             }
             loss_log.write(json.dumps(record) + "\n")
             loss_log.flush()
@@ -320,6 +384,13 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
 
     summary = {
         "run_name": run_name,
+        "version": version,
+        "rank_tier": rank_tier,
+        "lora_r": lora_r,
+        "lora_alpha": lora_alpha,
+        "per_device_batch_size": per_device_batch_size,
+        "gradient_accumulation_steps": gradient_accumulation_steps,
+        "effective_batch_size": per_device_batch_size * gradient_accumulation_steps,
         "phase": phase,
         "total_steps": total_steps,
         "checkpoint_steps": checkpoint_steps,
@@ -375,6 +446,9 @@ def main():
                               "checkpoints/{model}_n{size}_phase{N}/step_31_pct_25) — loads its "
                               "adapter weights, optimizer state, and step counter, and continues "
                               "training from that step rather than restarting from scratch.")
+    parser.add_argument("--version", type=str, default=None,
+                         help="Pipeline generation to write under (checkpoints/{version}/, "
+                              "logs/{version}/) — defaults to config.PIPELINE_VERSION.")
     args = parser.parse_args()
 
     model_cfg = MODELS_UNDER_TEST[0]
@@ -389,7 +463,7 @@ def main():
     data_cfg = DataConfig(num_samples=args.num_samples) if args.num_samples is not None else None
 
     summary = run(args.phase, model_cfg=model_cfg, data_cfg=data_cfg, force=args.force,
-                  resume_from_checkpoint=args.resume_from_checkpoint)
+                  resume_from_checkpoint=args.resume_from_checkpoint, version=args.version)
     print(json.dumps(summary, indent=2))
     if summary["loss_curve_flat_or_nondecreasing"]:
         print("WARNING: loss curve is flat or non-decreasing — possible training issue.")

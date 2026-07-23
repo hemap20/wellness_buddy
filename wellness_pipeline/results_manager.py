@@ -36,6 +36,12 @@ from typing import Optional
 
 DEFAULT_RESULTS_ROOT = Path(__file__).resolve().parent / "results"
 
+# Pipeline generation this run belongs to. Every path builder below takes an
+# explicit `version` param defaulting to this — callers that need a specific
+# generation (e.g. reading old v1/v2 data for comparison) pass version=...
+# explicitly rather than relying on this default.
+DEFAULT_VERSION = "v3"
+
 
 # ---------------------------------------------------------------------------
 # Naming / path helpers
@@ -83,8 +89,16 @@ def make_run_id(model_name: str, dataset_size: Optional[int], phase: int,
 # Path resolution
 # ---------------------------------------------------------------------------
 
+def get_version_root(version: str = None, root: Path = None) -> Path:
+    """`results/{version}/` — every model dir for that generation lives here."""
+    root = root or DEFAULT_RESULTS_ROOT
+    version = version or DEFAULT_VERSION
+    return root / version
+
+
 def get_results_path(model_name: str, dataset_size: Optional[int], phase: int,
-                      subfolder: Optional[str] = None, root: Path = None) -> Path:
+                      subfolder: Optional[str] = None, root: Path = None,
+                      version: str = None) -> Path:
     """Returns the path for this model/dataset_size/phase. Pure path
     building only — does NOT create any directories. Every call site that
     reads (report.py, generate_charts.py, load_scores/load_baseline, the
@@ -95,12 +109,19 @@ def get_results_path(model_name: str, dataset_size: Optional[int], phase: int,
     orchestrator.py) create directories now, immediately before writing.
 
     phase == 1 (baseline) is a special case: returns the FILE path
-    `results/{model}/phase1_baseline.json` directly, ignoring dataset_size
-    and subfolder entirely (baseline has no per-condition/per-subfolder
-    breakdown — it's one JSON file covering every test case/condition).
+    `results/{version}/{model}_{version}/phase1_baseline.json` directly,
+    ignoring dataset_size and subfolder entirely (baseline has no
+    per-condition/per-subfolder breakdown — it's one JSON file covering
+    every test case/condition).
+
+    `version` namespaces the whole path under `results/{version}/` and
+    suffixes the model dirname with `_{version}` — this keeps different
+    training generations (v1/v2/v3) from ever colliding on disk even when
+    re-run against the same model/dataset_size/phase.
     """
-    root = root or DEFAULT_RESULTS_ROOT
-    model_dir = root / sanitize_model_name(model_name)
+    version = version or DEFAULT_VERSION
+    version_root = get_version_root(version, root=root)
+    model_dir = version_root / f"{sanitize_model_name(model_name)}_{version}"
 
     if phase == 1:
         return model_dir / "phase1_baseline.json"
@@ -112,18 +133,18 @@ def get_results_path(model_name: str, dataset_size: Optional[int], phase: int,
     return phase_dir / subfolder if subfolder else phase_dir
 
 
-def get_manifest_path(root: Path = None) -> Path:
-    root = root or DEFAULT_RESULTS_ROOT
-    root.mkdir(parents=True, exist_ok=True)
-    return root / "manifest.jsonl"
+def get_manifest_path(root: Path = None, version: str = None) -> Path:
+    version_root = get_version_root(version, root=root)
+    version_root.mkdir(parents=True, exist_ok=True)
+    return version_root / "manifest.jsonl"
 
 
 # ---------------------------------------------------------------------------
 # Baseline dedup
 # ---------------------------------------------------------------------------
 
-def baseline_exists(model_name: str, root: Path = None) -> bool:
-    return get_results_path(model_name, dataset_size=None, phase=1, root=root).exists()
+def baseline_exists(model_name: str, root: Path = None, version: str = None) -> bool:
+    return get_results_path(model_name, dataset_size=None, phase=1, root=root, version=version).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -134,29 +155,30 @@ class ExistingRunError(RuntimeError):
     pass
 
 
-def check_existing_run(model_name: str, dataset_size: int, phase: int, root: Path = None) -> dict:
+def check_existing_run(model_name: str, dataset_size: int, phase: int, root: Path = None,
+                        version: str = None) -> dict:
     """Returns {"exists": bool, "path": str, "has_content": bool}. `has_content`
     is True if scores.json (or, for phase1, the baseline file) already has
     at least one recorded result — that's the signal an accidental re-run
     would clobber real data, as opposed to an empty/nonexistent directory."""
     if phase == 1:
-        path = get_results_path(model_name, None, 1, root=root)
+        path = get_results_path(model_name, None, 1, root=root, version=version)
         exists = path.exists()
         has_content = exists and path.stat().st_size > 0
         return {"exists": exists, "path": str(path), "has_content": has_content}
 
-    phase_dir = get_results_path(model_name, dataset_size, phase, root=root)
+    phase_dir = get_results_path(model_name, dataset_size, phase, root=root, version=version)
     scores_path = phase_dir / "scores.json"
     has_content = scores_path.exists() and scores_path.stat().st_size > 0
     return {"exists": phase_dir.exists(), "path": str(phase_dir), "has_content": has_content}
 
 
 def require_no_existing_run(model_name: str, dataset_size: int, phase: int,
-                             force: bool = False, root: Path = None) -> None:
+                             force: bool = False, root: Path = None, version: str = None) -> None:
     """Raise ExistingRunError if this model/dataset_size/phase already has
     results on disk, unless `force=True`. Call this before starting a run
     that would write to that path."""
-    info = check_existing_run(model_name, dataset_size, phase, root=root)
+    info = check_existing_run(model_name, dataset_size, phase, root=root, version=version)
     if info["has_content"] and not force:
         raise ExistingRunError(
             f"Results already exist at {info['path']} for model={model_name!r}, "
@@ -171,12 +193,12 @@ def require_no_existing_run(model_name: str, dataset_size: int, phase: int,
 # ---------------------------------------------------------------------------
 
 def append_scores_entry(model_name: str, dataset_size: int, phase: int, entry: dict,
-                         root: Path = None) -> Path:
+                         root: Path = None, version: str = None) -> Path:
     """entry is one {"metadata": {...}, "judge_runs": [...]} record (same shape
     judge.py already produces per transcript). Appended to the phase's shared
     scores.json — read-modify-write is safe here since each phase folder is
     only ever written by one run at a time, unlike the global manifest."""
-    phase_dir = get_results_path(model_name, dataset_size, phase, root=root)
+    phase_dir = get_results_path(model_name, dataset_size, phase, root=root, version=version)
     phase_dir.mkdir(parents=True, exist_ok=True)
     scores_path = phase_dir / "scores.json"
 
@@ -191,27 +213,28 @@ def append_scores_entry(model_name: str, dataset_size: int, phase: int, entry: d
     return scores_path
 
 
-def load_scores(model_name: str, dataset_size: int, phase: int, root: Path = None) -> list[dict]:
-    scores_path = get_results_path(model_name, dataset_size, phase, root=root) / "scores.json"
+def load_scores(model_name: str, dataset_size: int, phase: int, root: Path = None,
+                 version: str = None) -> list[dict]:
+    scores_path = get_results_path(model_name, dataset_size, phase, root=root, version=version) / "scores.json"
     if not scores_path.exists():
         return []
     with open(scores_path, encoding="utf-8") as f:
         return json.load(f)
 
 
-def save_baseline(model_name: str, entries: list[dict], root: Path = None) -> Path:
+def save_baseline(model_name: str, entries: list[dict], root: Path = None, version: str = None) -> Path:
     """entries: list of {"metadata": {...}, "judge_runs": [...]} records
     covering every test_case/condition run in phase 1. Written once — see
     baseline_exists()/require_no_existing_run() for the dedup guard."""
-    path = get_results_path(model_name, None, 1, root=root)
+    path = get_results_path(model_name, None, 1, root=root, version=version)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"model": model_name, "phase": 1, "generated_at": _now_iso(), "results": entries}, f, indent=2)
     return path
 
 
-def load_baseline(model_name: str, root: Path = None) -> Optional[dict]:
-    path = get_results_path(model_name, None, 1, root=root)
+def load_baseline(model_name: str, root: Path = None, version: str = None) -> Optional[dict]:
+    path = get_results_path(model_name, None, 1, root=root, version=version)
     if not path.exists():
         return None
     with open(path, encoding="utf-8") as f:
@@ -244,19 +267,19 @@ def build_manifest_entry(model_name: str, dataset_size: Optional[int], phase: in
     }
 
 
-def append_manifest_entry(entry: dict, root: Path = None) -> Path:
+def append_manifest_entry(entry: dict, root: Path = None, version: str = None) -> Path:
     """Append-only — never reads-then-rewrites the whole file, so concurrent
     runs can't truncate each other's entries (worst case with true concurrent
     writers is interleaved-but-intact lines, since each write is one line
     with a trailing newline via a single write() call under the GIL/OS)."""
-    path = get_manifest_path(root=root)
+    path = get_manifest_path(root=root, version=version)
     with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
     return path
 
 
-def load_manifest(root: Path = None) -> list[dict]:
-    path = get_manifest_path(root=root)
+def load_manifest(root: Path = None, version: str = None) -> list[dict]:
+    path = get_manifest_path(root=root, version=version)
     if not path.exists():
         return []
     entries = []

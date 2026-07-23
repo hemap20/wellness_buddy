@@ -26,7 +26,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import results_manager as rm
-from config import INFERENCE_CONDITIONS
+from config import INFERENCE_CONDITIONS, PIPELINE_VERSION
 from report import DIMENSIONS
 from metrics import sample_efficiency
 
@@ -65,37 +65,48 @@ def size_tier(model: str) -> str:
     return "unknown"
 
 
-def discover_model_sizes() -> list[tuple[str, int]]:
-    """(model, dataset_size) pairs with real phase 2/3 results, discovered by
-    scanning the results/ directory directly rather than trusting
-    manifest.jsonl's "model" field — folders get renamed (e.g. dropping a
-    "-v2" tag) without rewriting the manifest, so a stale manifest name would
-    point at an empty/moved folder. Models renamed with a "_v1" suffix are
-    pre-v2 (different hyperparameters — no weight decay/early stopping) and
-    excluded from every chart; the plain (unsuffixed) name is the
-    current/main run for every model."""
+def discover_model_sizes(version: str = None) -> list[tuple[str, int]]:
+    """(model, dataset_size) pairs with real phase 2/3 results for this
+    pipeline generation, discovered by scanning results/{version}/ directly
+    rather than trusting manifest.jsonl's "model" field — folders get
+    renamed without rewriting the manifest, so a stale manifest name would
+    point at an empty/moved folder. Each generation (v1/v2/v3) now lives
+    under its own results/{version}/ directory (see results_manager.py) so
+    there's no need to name-guess which models belong to which generation —
+    just scan the version's own subtree. Model dirnames under a version are
+    suffixed "_{version}" (e.g. "dialogpt-small_v2") — that suffix is
+    stripped back off before returning, since every other rm.* lookup
+    (load_scores/load_baseline/get_results_path) takes the base model name
+    and re-appends "_{version}" itself; returning the raw dirname here would
+    double-suffix those calls."""
+    version = version or PIPELINE_VERSION
+    version_root = rm.get_version_root(version)
+    suffix = f"_{version}"
     pairs = set()
-    for model_dir in sorted(rm.DEFAULT_RESULTS_ROOT.iterdir()):
-        if not model_dir.is_dir() or model_dir.name.endswith("_v1"):
+    if not version_root.is_dir():
+        return []
+    for model_dir in sorted(version_root.iterdir()):
+        if not model_dir.is_dir():
             continue
+        base_name = model_dir.name[: -len(suffix)] if model_dir.name.endswith(suffix) else model_dir.name
         for size_dir in model_dir.glob("n[0-9]*"):
             # Require an actual scores.json (not just an empty phase{N}/
-            # directory scaffold — leftover renamed-away "-v2" folders keep
-            # their empty subdirs behind and would otherwise show up as
-            # spurious "models" with no real data).
+            # directory scaffold — leftover renamed-away folders keep their
+            # empty subdirs behind and would otherwise show up as spurious
+            # "models" with no real data).
             if size_dir.is_dir() and any(size_dir.glob("phase*/scores.json")):
-                pairs.add((model_dir.name, int(size_dir.name.lstrip("n"))))
+                pairs.add((base_name, int(size_dir.name.lstrip("n"))))
     return sorted(pairs)
 
 
-def load_baseline(model: str) -> list[dict]:
-    b = rm.load_baseline(model)
+def load_baseline(model: str, version: str = None) -> list[dict]:
+    b = rm.load_baseline(model, version=version)
     return b["results"] if b else []
 
 
-def load_scores(model: str, size: int, phase: int) -> list[dict]:
+def load_scores(model: str, size: int, phase: int, version: str = None) -> list[dict]:
     try:
-        return rm.load_scores(model, size, phase)
+        return rm.load_scores(model, size, phase, version=version)
     except Exception:
         return []
 
@@ -132,9 +143,9 @@ def savefig(fig, path: Path):
 # 1. Train vs validation loss, per (model, phase) actually trained
 # ---------------------------------------------------------------------------
 
-def chart_loss_curves(model: str, size: int, phase: int, out_dir: Path, log: list):
+def chart_loss_curves(model: str, size: int, phase: int, out_dir: Path, log: list, version: str = None):
     try:
-        curve_path = rm.get_results_path(model, size, phase) / "loss_curve.json"
+        curve_path = rm.get_results_path(model, size, phase, version=version) / "loss_curve.json"
         if not curve_path.exists():
             log.append(f"SKIP loss_curve {model} n{size} phase{phase}: no loss_curve.json")
             return
@@ -170,12 +181,12 @@ _DIM_MARKERS = ["o", "s", "^", "D", "v", "P"]
 _DIM_LINESTYLES = ["-", "--", "-.", ":", "-", "--"]
 
 
-def chart_baseline_vs_phases(models: list[str], size: int, out_dir: Path, log: list):
+def chart_baseline_vs_phases(models: list[str], size: int, out_dir: Path, log: list, version: str = None):
     xs = ["phase1\nbaseline", "phase2\nno_prompt", "phase3\nmatched"]
     for model in models:
-        baseline = load_baseline(model)
-        phase2 = load_scores(model, size, 2)
-        phase3 = load_scores(model, size, 3)
+        baseline = load_baseline(model, version=version)
+        phase2 = load_scores(model, size, 2, version=version)
+        phase3 = load_scores(model, size, 3, version=version)
         if not baseline or (not phase2 and not phase3):
             log.append(f"SKIP baseline_vs_phases {model} n{size}: missing baseline/phase2/phase3 data")
             continue
@@ -219,7 +230,7 @@ def chart_baseline_vs_phases(models: list[str], size: int, out_dir: Path, log: l
 # ---------------------------------------------------------------------------
 
 def chart_cross_model_ranking(models: list[str], size: int, phase: int, condition: str,
-                               out_dir: Path, log: list):
+                               out_dir: Path, log: list, version: str = None):
     tiers: dict[str, list[str]] = {}
     for m in models:
         tiers.setdefault(size_tier(m), []).append(m)
@@ -228,7 +239,7 @@ def chart_cross_model_ranking(models: list[str], size: int, phase: int, conditio
     for tier, tier_models in tiers.items():
         rows = {}
         for model in tier_models:
-            entries = load_scores(model, size, phase)
+            entries = load_scores(model, size, phase, version=version)
             if entries:
                 rows[model] = {d: dim_avg(entries, d, condition) for d in DIMENSIONS}
                 rows[model]["average"] = aggregate_score(entries, condition)
@@ -264,16 +275,17 @@ def chart_cross_model_ranking(models: list[str], size: int, phase: int, conditio
 # 7. Sample efficiency
 # ---------------------------------------------------------------------------
 
-def chart_sample_efficiency(models: list[str], size: int, phases: list[int], out_dir: Path, log: list):
+def chart_sample_efficiency(models: list[str], size: int, phases: list[int], out_dir: Path, log: list,
+                             version: str = None):
     results = {}  # model -> phase -> efficiency
     any_data = False
     for model in models:
-        baseline = load_baseline(model)
+        baseline = load_baseline(model, version=version)
         results[model] = {}
         for phase in phases:
             condition = "no_prompt" if phase == 2 else "matched"
-            entries = load_scores(model, size, phase)
-            summary_path = rm.get_results_path(model, size, phase) / "checkpoints_meta.json"
+            entries = load_scores(model, size, phase, version=version)
+            summary_path = rm.get_results_path(model, size, phase, version=version) / "checkpoints_meta.json"
             if not entries or not summary_path.exists():
                 continue
             meta = json.loads(summary_path.read_text())
@@ -312,11 +324,12 @@ def chart_sample_efficiency(models: list[str], size: int, phases: list[int], out
 # 8. Prompt robustness (phase 3 only)
 # ---------------------------------------------------------------------------
 
-def chart_prompt_robustness(models: list[str], size: int, metric: str, out_dir: Path, log: list):
+def chart_prompt_robustness(models: list[str], size: int, metric: str, out_dir: Path, log: list,
+                             version: str = None):
     conditions = INFERENCE_CONDITIONS["phase3"]
     rows = {}
     for model in models:
-        entries = load_scores(model, size, 3)
+        entries = load_scores(model, size, 3, version=version)
         if not entries:
             continue
         if metric == "aggregate":
@@ -350,10 +363,11 @@ def chart_prompt_robustness(models: list[str], size: int, metric: str, out_dir: 
 # 9. Phase 2 transfer test (no_prompt vs system_prompt)
 # ---------------------------------------------------------------------------
 
-def chart_phase2_transfer(models: list[str], size: int, metric: str, out_dir: Path, log: list):
+def chart_phase2_transfer(models: list[str], size: int, metric: str, out_dir: Path, log: list,
+                           version: str = None):
     rows = {}
     for model in models:
-        entries = load_scores(model, size, 2)
+        entries = load_scores(model, size, 2, version=version)
         if not entries:
             continue
         if metric == "aggregate":
@@ -388,21 +402,24 @@ def chart_phase2_transfer(models: list[str], size: int, metric: str, out_dir: Pa
 # Driver
 # ---------------------------------------------------------------------------
 
-def run(out_dir: str = "charts", phases: list[int] = None, robustness_metric: str = "aggregate",
-        dataset_sizes: list[int] = None) -> dict:
+def run(out_dir: str = None, phases: list[int] = None, robustness_metric: str = "aggregate",
+        dataset_sizes: list[int] = None, version: str = None) -> dict:
     """Generate every chart across all discovered (model, dataset_size)
-    pairs, or only the given dataset_sizes if specified (e.g. right after a
-    run-full for one particular size — no need to re-chart every size that
-    happens to have old data lying around)."""
+    pairs for this pipeline generation, or only the given dataset_sizes if
+    specified (e.g. right after a run-full for one particular size — no need
+    to re-chart every size that happens to have old data lying around).
+    out_dir defaults to charts/{version} — different generations' charts
+    never mix in the same directory."""
     phases = phases or [2, 3]
-    out_dir = Path(out_dir)
+    version = version or PIPELINE_VERSION
+    out_dir = Path(out_dir) if out_dir else Path("charts") / version
     log = []
 
-    pairs = discover_model_sizes()
+    pairs = discover_model_sizes(version=version)
     if dataset_sizes is not None:
         pairs = [(m, s) for m, s in pairs if s in dataset_sizes]
     if not pairs:
-        print("No (model, dataset_size) pairs with real results found — nothing to chart.")
+        print(f"No (model, dataset_size) pairs with real results found under results/{version}/ — nothing to chart.")
         return {"generated": 0, "skipped": 0, "out_dir": str(out_dir)}
 
     sizes = sorted({size for _, size in pairs})
@@ -412,16 +429,16 @@ def run(out_dir: str = "charts", phases: list[int] = None, robustness_metric: st
 
         for model in models:
             for phase in phases:
-                chart_loss_curves(model, size, phase, out_dir, log)
+                chart_loss_curves(model, size, phase, out_dir, log, version=version)
 
-        chart_baseline_vs_phases(models, size, out_dir, log)
+        chart_baseline_vs_phases(models, size, out_dir, log, version=version)
         for condition in INFERENCE_CONDITIONS["phase2"]:
-            chart_cross_model_ranking(models, size, 2, condition, out_dir, log)
+            chart_cross_model_ranking(models, size, 2, condition, out_dir, log, version=version)
         for condition in INFERENCE_CONDITIONS["phase3"]:
-            chart_cross_model_ranking(models, size, 3, condition, out_dir, log)
-        chart_sample_efficiency(models, size, phases, out_dir, log)
-        chart_prompt_robustness(models, size, robustness_metric, out_dir, log)
-        chart_phase2_transfer(models, size, robustness_metric, out_dir, log)
+            chart_cross_model_ranking(models, size, 3, condition, out_dir, log, version=version)
+        chart_sample_efficiency(models, size, phases, out_dir, log, version=version)
+        chart_prompt_robustness(models, size, robustness_metric, out_dir, log, version=version)
+        chart_phase2_transfer(models, size, robustness_metric, out_dir, log, version=version)
 
     print("\n=== summary ===")
     for line in log:
@@ -434,8 +451,9 @@ def run(out_dir: str = "charts", phases: list[int] = None, robustness_metric: st
 
 def main():
     parser = argparse.ArgumentParser(description="Generate documentation charts from experiment results.")
-    parser.add_argument("--out-dir", default="charts")
+    parser.add_argument("--out-dir", default=None, help="Defaults to charts/{version}.")
     parser.add_argument("--phases", default="2,3", help="Comma-separated phases to include (training charts).")
+    parser.add_argument("--version", default=PIPELINE_VERSION, help="Pipeline generation to chart (v1/v2/v3).")
     parser.add_argument("--robustness-metric", default="aggregate",
                          choices=["system_prompt_dependency", "aggregate"],
                          help="system_prompt_dependency is only ever scored for the LAST condition run "
@@ -444,7 +462,7 @@ def main():
                               "'aggregate' (default) doesn't have that gap.")
     args = parser.parse_args()
     run(out_dir=args.out_dir, phases=[int(p) for p in args.phases.split(",")],
-        robustness_metric=args.robustness_metric)
+        robustness_metric=args.robustness_metric, version=args.version)
 
 
 if __name__ == "__main__":

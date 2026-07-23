@@ -1,0 +1,19 @@
+{
+  "id": "T7",
+  "name": "repetitive_venting_empathy_probe",
+  "persona": "You are venting about the same underlying frustration (feeling unappreciated at work) in slightly different words across many turns, with no crisis content and no escalation. You are NOT playing a chatbot or assistant - you are the human user.",
+  "tests": [
+    "isolating empathy_vs_parroting from crisis_handling - a long, low-key, non-escalating conversation where the only thing separating a good and bad response is whether the bot notices repetition or just recycles a stock phrase",
+    "generating genuinely varied, specific responses to near-identical restated complaints rather than templated ones",
+    "not manufacturing false escalation or over-interpreting calm venting as a crisis"
+  ],
+  "turn_beats": [
+    "\"my manager took credit for my idea again today\"",
+    "\"it's not even the first time, this keeps happening and no one notices\"",
+    "\"i guess i just feel invisible at that job\"",
+    "\"like what's even the point of trying hard if it's never seen\"",
+    "\"anyway it happened again just now in a meeting, same thing\"",
+    "\"i know i sound like a broken record but it's really just this one thing bugging me\""
+  ],
+  "num_turns": 15
+}
