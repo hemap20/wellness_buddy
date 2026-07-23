@@ -8,14 +8,33 @@ that's used. DialoGPT-small has no chat template, so we fall back to a plain
 "System: ...\nUser: ...\nBot: " format — this keeps the pipeline compatible
 with any future model, chat-template or not.
 """
-def format_prompt(tokenizer, messages: list[dict], add_generation_prompt: bool = True) -> str:
+def format_prompt(tokenizer, messages: list[dict], add_generation_prompt: bool = True,
+                   expects_chat_template: bool = True) -> str:
     """messages: list of {"role": "system"|"user"|"assistant", "content": str}.
 
     Thinking mode is not used anywhere in this pipeline. Some chat templates
     (Qwen3-family) default to enable_thinking=True when the variable isn't
     passed at all, so we explicitly force it off for any template that
     accepts that kwarg — templates that don't recognize it (most models)
-    just ignore the extra kwarg or raise, handled by the retry below."""
+    just ignore the extra kwarg or raise, handled by the retry below.
+
+    expects_chat_template=True (the default — pass model_cfg.expects_chat_template
+    at call sites) means a missing tokenizer.chat_template is treated as a
+    misconfiguration and raises, rather than silently falling through to
+    _fallback_format(). That fallback exists specifically for models
+    genuinely documented as having none (dialogpt-small/GPT-2) — anything
+    else landing there almost always means hf_model_id points at a base
+    (non-instruction-tuned) model by mistake, which would otherwise silently
+    train on plain "User:"/"Bot:" text instead of that model's real
+    chat-formatting tokens. Pass expects_chat_template=False explicitly for
+    a model that's actually supposed to use the fallback."""
+    if not getattr(tokenizer, "chat_template", None) and expects_chat_template:
+        raise RuntimeError(
+            "tokenizer.chat_template is missing but expects_chat_template=True — this almost "
+            "always means hf_model_id points at a base (non-instruction-tuned) model instead of "
+            "an instruction-tuned one. Fix the model's hf_model_id in config.py, or if this model "
+            "genuinely has no chat template, set expects_chat_template=False on its ModelUnderTest entry."
+        )
     if getattr(tokenizer, "chat_template", None):
         try:
             return tokenizer.apply_chat_template(
@@ -78,13 +97,18 @@ def _fallback_format(messages: list[dict], add_generation_prompt: bool) -> str:
     return text
 
 
-def build_training_text(tokenizer, messages: list[dict]) -> tuple[str, str]:
+def build_training_text(tokenizer, messages: list[dict], expects_chat_template: bool = True) -> tuple[str, str]:
     """Returns (prompt_text, full_text) where prompt_text is everything up to
     but not including the assistant's reply, and full_text includes it. Used
-    to compute the loss mask (only assistant tokens are trained on)."""
+    to compute the loss mask (only assistant tokens are trained on).
+
+    expects_chat_template: pass model_cfg.expects_chat_template — see
+    format_prompt()'s docstring for why this defaults to raising rather than
+    silently falling back."""
     assert messages[-1]["role"] == "assistant"
     prompt_messages = messages[:-1]
-    prompt_text = format_prompt(tokenizer, prompt_messages, add_generation_prompt=True)
+    prompt_text = format_prompt(tokenizer, prompt_messages, add_generation_prompt=True,
+                                 expects_chat_template=expects_chat_template)
     full_text = prompt_text + " " + messages[-1]["content"]
     return prompt_text, full_text
 

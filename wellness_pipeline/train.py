@@ -71,10 +71,10 @@ def load_phase_data(phase: int, cfg: DataConfig) -> tuple[list[dict], list[dict]
     return train_records, val_records
 
 
-def build_example_tensors(tokenizer, messages: list[dict], max_length: int):
+def build_example_tensors(tokenizer, messages: list[dict], max_length: int, expects_chat_template: bool = True):
     import torch
 
-    prompt_text, full_text = build_training_text(tokenizer, messages)
+    prompt_text, full_text = build_training_text(tokenizer, messages, expects_chat_template=expects_chat_template)
     prompt_ids = tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
     full_ids = tokenizer(full_text, add_special_tokens=False)["input_ids"]
     eos = tokenizer.eos_token_id
@@ -244,8 +244,16 @@ def run(phase: int, model_cfg: ModelUnderTest = None, train_cfg: TrainingConfig 
         model = get_peft_model(base_model, lora_config)
     model.train()
 
-    examples = [build_example_tensors(tokenizer, r["messages"], train_cfg.max_seq_length) for r in records]
-    val_examples = [build_example_tensors(tokenizer, r["messages"], train_cfg.max_seq_length) for r in val_records]
+    examples = [
+        build_example_tensors(tokenizer, r["messages"], train_cfg.max_seq_length,
+                               expects_chat_template=model_cfg.expects_chat_template)
+        for r in records
+    ]
+    val_examples = [
+        build_example_tensors(tokenizer, r["messages"], train_cfg.max_seq_length,
+                               expects_chat_template=model_cfg.expects_chat_template)
+        for r in val_records
+    ]
 
     num_batches_per_epoch = -(-len(examples) // per_device_batch_size)  # ceil div — last batch may be smaller
     total_steps = num_batches_per_epoch * train_cfg.num_train_epochs

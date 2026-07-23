@@ -93,7 +93,9 @@ def validate_chat_template(model_cfg, data_cfg) -> tuple[str, bool, list[str]]:
         tokenizer.pad_token = tokenizer.eos_token
 
     messages = _sample_messages(model_cfg, data_cfg)
-    prompt_text, full_text = model_utils.build_training_text(tokenizer, messages)
+    prompt_text, full_text = model_utils.build_training_text(
+        tokenizer, messages, expects_chat_template=model_cfg.expects_chat_template
+    )
 
     expected_tokens = config.EXPECTED_SPECIAL_TOKENS.get(model_cfg.name, [])
     issues = []
@@ -219,7 +221,9 @@ def audit_sequence_lengths(model_cfg, data_cfg, phases=(2, 3)) -> dict:
                 if not line:
                     continue
                 messages = json.loads(line)["messages"]
-                _, full_text = model_utils.build_training_text(tokenizer, messages)
+                _, full_text = model_utils.build_training_text(
+                    tokenizer, messages, expects_chat_template=model_cfg.expects_chat_template
+                )
                 lengths.append(len(tokenizer(full_text)["input_ids"]))
 
     if not lengths:
@@ -347,7 +351,15 @@ def run_preflight(model_cfgs, data_cfg, version: str, reviewed_templates: bool =
     print("\n=== sequence-length audit ===")
     seq_stats_by_name = {}
     for model_cfg in model_cfgs:
-        seq_stats_by_name[model_cfg.name] = audit_sequence_lengths(model_cfg, data_cfg)
+        try:
+            seq_stats_by_name[model_cfg.name] = audit_sequence_lengths(model_cfg, data_cfg)
+        except Exception as exc:
+            # Runs for every model regardless of whether an earlier stage
+            # already failed it — must not crash the whole batch just
+            # because e.g. the chat-template gate already caught a
+            # misconfigured hf_model_id for this one model.
+            print(f"  {model_cfg.name}: [error] {exc}")
+            seq_stats_by_name[model_cfg.name] = {"count": 0, "error": str(exc)}
     sections.append(render_seq_length_section(seq_stats_by_name))
     _flush()
 

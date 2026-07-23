@@ -100,10 +100,18 @@ class ModelUnderTest:
     # Set True if the HF repo requires accepting a license + `huggingface-cli
     # login` / HF_TOKEN before the tokenizer/weights can be downloaded.
     gated: bool = False
+    # False ONLY for models genuinely documented as having no chat template
+    # (currently just dialogpt-small/GPT-2). model_utils.format_prompt()
+    # raises instead of silently falling back to the generic "User:"/"Bot:"
+    # format when this is True but tokenizer.chat_template turns out to be
+    # None — that combination means hf_model_id is very likely pointing at a
+    # base (non-instruction-tuned) model by mistake, which silently produces
+    # wrong training data with no chat-formatting tokens at all otherwise.
+    expects_chat_template: bool = True
 
 
 MODELS_UNDER_TEST = [
-    ModelUnderTest(),
+    ModelUnderTest(expects_chat_template=False),  # dialogpt-small/GPT-2 — no chat template, plain "User:"/"Bot:" fallback is expected
     ModelUnderTest(
         name="gemma-3-1b-it",
         hf_model_id="google/gemma-3-1b-it",
@@ -195,7 +203,14 @@ MODELS_UNDER_TEST = [
     ),
     ModelUnderTest(
         name="llama-3-8b",
-        hf_model_id="meta-llama/Meta-Llama-3-8B",
+        # NOTE: was "meta-llama/Meta-Llama-3-8B" (base model) — base models
+        # ship no chat_template at all, which silently fell back to the
+        # generic "User:"/"Bot:" format instead of Llama-3's real
+        # <|begin_of_text|>/<|start_header_id|>/<|eot_id|> template. Caught
+        # live by preflight.py's chat-template report; every other entry in
+        # this list is already the instruction-tuned variant — this was the
+        # one inconsistency.
+        hf_model_id="meta-llama/Meta-Llama-3-8B-Instruct",
         max_new_tokens=128,
         device="auto",
         # Same standard Llama attention naming as the other non-gemma models
