@@ -2,7 +2,9 @@
 v3 preflight gates — called by orchestrator.py's `run-v3` command before any
 model enters training, and runnable standalone for inspection.
 
-Three checks, all producing a durable report under reports/{version}/:
+Four checks, all written into ONE comprehensive, timestamped report per run
+— reports/{version}/preflight_{timestamp}.md — built up incrementally as
+each stage completes (see run_preflight):
 
 1. Chat template validation (validate_chat_templates) — formats one real
    training example per model via the pipeline's own
@@ -17,7 +19,10 @@ Three checks, all producing a durable report under reports/{version}/:
    config.KNOWN_ARCHITECTURAL_ASYMMETRIES as "expected-asymmetric" instead
    of BLOCKED.
 
-3. Sequence-length audit (audit_sequence_lengths) — tokenizes every phase2/3
+3. Batch-size table assertion (assert_batch_table) — confirms every model
+   hits the same effective batch size (config.TARGET_EFFECTIVE_BATCH_SIZE).
+
+4. Sequence-length audit (audit_sequence_lengths) — tokenizes every phase2/3
    training example per model, reports the length distribution and
    truncation-% at both the historical 256 and the configured
    TrainingConfig.max_seq_length (2048), as a soft warning only (data that
@@ -104,34 +109,7 @@ def validate_chat_template(model_cfg, data_cfg) -> tuple[str, bool, list[str]]:
     return full_text, (len(issues) == 0), issues
 
 
-def chat_template_report_path(version: str) -> Path:
-    return config.REPORT_DIR / version / "chat_template_check.md"
-
-
-def _write_chat_template_only_report(results: dict[str, ModelPreflightResult], version: str) -> Path:
-    """Written eagerly, right after formatting — BEFORE the manual-review
-    confirmation gate — so the file exists to read (or tail -f) while you're
-    deciding, rather than only appearing after run_preflight finishes (by
-    which point the interactive y/N prompt already needed an answer). Kept
-    deliberately separate from _write_report()'s fuller version (which adds
-    BLOCKED/READY status once every gate has run) — that one overwrites this
-    file at the end with more detail, same path."""
-    path = chat_template_report_path(version)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f"# Chat template check — {version}\n", "(written before manual-review confirmation; re-written with BLOCKED/READY status once preflight finishes)\n"]
-    for name, r in results.items():
-        lines.append(f"## {name}\n")
-        if r.chat_template_issues:
-            lines.append(f"**[automated check] FAILED**: {r.chat_template_issues}\n")
-        else:
-            lines.append("**[automated check] passed** (expected special tokens present, no duplication)\n")
-        lines.append(f"```\n{r.chat_template_text or '<no output — see issues above>'}\n```\n")
-    path.write_text("\n".join(lines), encoding="utf-8")
-    return path
-
-
-def validate_chat_templates(model_cfgs, data_cfg, version: str = None) -> dict[str, ModelPreflightResult]:
-    version = version or config.PIPELINE_VERSION
+def validate_chat_templates(model_cfgs, data_cfg) -> dict[str, ModelPreflightResult]:
     results = {}
     for model_cfg in model_cfgs:
         result = ModelPreflightResult(name=model_cfg.name)
@@ -151,10 +129,19 @@ def validate_chat_templates(model_cfgs, data_cfg, version: str = None) -> dict[s
             print(f"[automated check] FAILED: {issues}")
         else:
             print("[automated check] passed (expected special tokens present, no duplication)")
-
-    report_path = _write_chat_template_only_report(results, version)
-    print(f"\n[report] chat-template output also written to {report_path} — read it there if terminal scrollback is inconvenient.")
     return results
+
+
+def render_chat_template_section(results: dict[str, ModelPreflightResult]) -> str:
+    lines = ["## 1. Chat template validation\n"]
+    for name, r in results.items():
+        lines.append(f"### {name}\n")
+        if r.chat_template_issues:
+            lines.append(f"**[automated check] FAILED**: {r.chat_template_issues}\n")
+        else:
+            lines.append("**[automated check] passed** (expected special tokens present, no duplication)\n")
+        lines.append(f"```\n{r.chat_template_text or '<no output — see issues above>'}\n```\n")
+    return "\n".join(lines)
 
 
 def confirm_templates_reviewed(reviewed_flag: bool) -> bool:
@@ -193,6 +180,22 @@ def validate_target_modules(model_cfgs) -> dict[str, diag.DiagnosticResult]:
             print(f"[expected-asymmetric] {model_cfg.name}: {asymmetry_note}")
         results[model_cfg.name] = result
     return results
+
+
+def render_target_modules_section(results: dict[str, diag.DiagnosticResult]) -> str:
+    lines = ["## 2. Target-modules / rank / trainable-pct gate\n"]
+    lines.append("| model | rank_tier | r | alpha | trainable_params | total_params | trainable_pct | status |")
+    lines.append("|---|---|---|---|---|---|---|---|")
+    for name, r in results.items():
+        lines.append(
+            f"| {name} | {r.rank_tier} | {r.r} | {r.alpha} | {r.trainable_params:,} | "
+            f"{r.total_params:,} | {r.trainable_pct:.4f}% | {r.status} |"
+        )
+    lines.append("")
+    for name, r in results.items():
+        if r.reason:
+            lines.append(f"- **{name}**: {r.reason}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +259,22 @@ def audit_sequence_lengths(model_cfg, data_cfg, phases=(2, 3)) -> dict:
     return stats
 
 
+def render_seq_length_section(seq_stats_by_name: dict[str, dict]) -> str:
+    lines = ["## 4. Sequence-length audit\n"]
+    lines.append(f"Configured `max_seq_length` = {config.SHARED_TRAINING_CONFIG.max_seq_length}\n")
+    lines.append("| model | n | min | max | mean | median | p99 | truncated@256 | truncated@configured |")
+    lines.append("|---|---|---|---|---|---|---|---|---|")
+    for name, s in seq_stats_by_name.items():
+        if not s.get("count"):
+            lines.append(f"| {name} | 0 | - | - | - | - | - | - | - |")
+            continue
+        lines.append(
+            f"| {name} | {s['count']} | {s['min']} | {s['max']} | {s['mean']:.0f} | {s['median']} | "
+            f"{s['p99']} | {s['truncated_pct_at_256']:.1f}% | {s['truncated_pct_at_configured']:.1f}% |"
+        )
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Batch-size table assertion
 # ---------------------------------------------------------------------------
@@ -275,23 +294,62 @@ def assert_batch_table(model_cfgs) -> list[tuple]:
     return rows
 
 
+def render_batch_table_section(rows: list[tuple]) -> str:
+    lines = ["## 3. Batch-size table\n"]
+    lines.append(f"Target effective batch size: {config.TARGET_EFFECTIVE_BATCH_SIZE}\n")
+    lines.append("| model | per_device_batch_size | gradient_accumulation_steps | effective_batch_size |")
+    lines.append("|---|---|---|---|")
+    for name, per_device, grad_accum, effective in rows:
+        lines.append(f"| {name} | {per_device} | {grad_accum} | {effective} |")
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Orchestration entry point
 # ---------------------------------------------------------------------------
 
 def run_preflight(model_cfgs, data_cfg, version: str, reviewed_templates: bool = False) -> dict[str, ModelPreflightResult]:
     """Returns {model_name: ModelPreflightResult}. Models with `.blocked=True`
-    must NOT proceed to training. Writes a durable report to
-    reports/{version}/chat_template_check.md."""
-    template_results = validate_chat_templates(model_cfgs, data_cfg, version=version)
+    must NOT proceed to training. Writes one comprehensive, timestamped
+    report per run — reports/{version}/preflight_{timestamp}.md — covering
+    every stage (chat templates, target_modules/rank gate, batch table,
+    seq-length audit, final BLOCKED/READY status). The file is written
+    incrementally as each stage completes (not just once at the end), so it
+    exists to read/tail well before the manual-review confirmation prompt
+    needs an answer, and a DIFFERENT timestamped file is created per run —
+    nothing is ever overwritten or appended into a previous run's file, so
+    you can always tell which run produced which output."""
+    import time
+
+    timestamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    report_path = config.REPORT_DIR / version / f"preflight_{timestamp}.md"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    sections = [f"# Preflight report — {version} (run {timestamp})\n"]
+
+    def _flush():
+        report_path.write_text("\n\n".join(sections), encoding="utf-8")
+
+    template_results = validate_chat_templates(model_cfgs, data_cfg)
+    sections.append(render_chat_template_section(template_results))
+    _flush()
+    print(f"\n[report] preflight output being written to {report_path} as each stage completes "
+          f"— read it there if terminal scrollback is inconvenient.")
+
     target_results = validate_target_modules(model_cfgs)
+    sections.append(render_target_modules_section(target_results))
+    _flush()
+
     batch_rows = assert_batch_table(model_cfgs)
     batch_by_name = {r[0]: r for r in batch_rows}
+    sections.append(render_batch_table_section(batch_rows))
+    _flush()
 
     print("\n=== sequence-length audit ===")
     seq_stats_by_name = {}
     for model_cfg in model_cfgs:
         seq_stats_by_name[model_cfg.name] = audit_sequence_lengths(model_cfg, data_cfg)
+    sections.append(render_seq_length_section(seq_stats_by_name))
+    _flush()
 
     templates_reviewed = confirm_templates_reviewed(reviewed_templates)
     if not templates_reviewed:
@@ -323,22 +381,21 @@ def run_preflight(model_cfgs, data_cfg, version: str, reviewed_templates: bool =
         result.block_reasons = reasons
         final[name] = result
 
-    _write_report(final, version)
+    sections.append(_render_final_status_section(final))
+    _flush()
+    print(f"\n[report] final preflight report written to {report_path}")
     return final
 
 
-def _write_report(results: dict[str, ModelPreflightResult], version: str) -> None:
-    path = chat_template_report_path(version)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f"# Preflight report — {version}\n"]
+def _render_final_status_section(results: dict[str, ModelPreflightResult]) -> str:
+    lines = ["## Final status\n"]
     for name, r in results.items():
         status = "BLOCKED" if r.blocked else "READY"
-        lines.append(f"## {name} — {status}\n")
+        lines.append(f"### {name} — {status}\n")
         if r.blocked:
             for reason in r.block_reasons:
                 lines.append(f"- {reason}")
-        lines.append(f"\n```\n{r.chat_template_text}\n```\n")
-    path.write_text("\n".join(lines), encoding="utf-8")
+    return "\n".join(lines)
     print(f"\n[report] wrote {path}")
 
 

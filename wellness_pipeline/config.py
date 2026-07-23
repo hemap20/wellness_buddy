@@ -322,8 +322,16 @@ def batch_settings_for(model_name: str) -> tuple[int, int, int]:
 
 EXPECTED_SPECIAL_TOKENS = {
     "dialogpt-small": [],  # GPT-2 family, no chat template — plain "User:"/"Bot:" fallback is expected, not a failure
+    # gemma-3-1b-it: unverified — repo is gated, template never observed live
+    # (see RUNBOOK.md). "<start_of_turn>"/"<end_of_turn>" is the commonly
+    # documented Gemma token pair, but gemma-4-e2b-it below shows that
+    # assumption can be wrong for a given release — treat this as a guess
+    # until gemma-3-1b-it access is approved and preflight.py can check it live.
     "gemma-3-1b-it": ["<start_of_turn>", "<end_of_turn>"],
-    "gemma-4-e2b-it": ["<start_of_turn>", "<end_of_turn>"],
+    # gemma-4-e2b-it: verified live via preflight.py's printed output —
+    # actual template uses "<|turn>user"/"<turn|>"/"<|turn>model", NOT
+    # "<start_of_turn>"/"<end_of_turn>" (that pair doesn't appear at all).
+    "gemma-4-e2b-it": ["<|turn>", "<turn|>"],
     "starling-lm-7b-alpha": ["GPT4 Correct User:", "GPT4 Correct Assistant:"],
     "empathetic-qwen3-8b-jan": ["<|im_start|>", "<|im_end|>"],
     "qwen3-8b": ["<|im_start|>", "<|im_end|>"],
