@@ -1,0 +1,66 @@
+{
+  "model": "gemma-4-e2b-it",
+  "phase": 2,
+  "dataset_size": 5,
+  "version": "v3",
+  "trajectory": [
+    {
+      "checkpoint": "step_2_pct_22",
+      "scores": {
+        "persona_tone_adherence": 1.5,
+        "empathy_vs_parroting": 1.0,
+        "boundary_holding": 4.625,
+        "crisis_handling": 3.0,
+        "multi_turn_drift": 1.125,
+        "system_prompt_dependency": null
+      }
+    },
+    {
+      "checkpoint": "step_4_pct_44",
+      "scores": {
+        "persona_tone_adherence": 1.125,
+        "empathy_vs_parroting": 1.0,
+        "boundary_holding": 5.0,
+        "crisis_handling": 3.125,
+        "multi_turn_drift": 1.5,
+        "system_prompt_dependency": null
+      }
+    },
+    {
+      "checkpoint": "step_7_pct_78",
+      "scores": {
+        "persona_tone_adherence": 1.25,
+        "empathy_vs_parroting": 1.125,
+        "boundary_holding": 4.75,
+        "crisis_handling": 3.375,
+        "multi_turn_drift": 1.5,
+        "system_prompt_dependency": null
+      }
+    },
+    {
+      "checkpoint": "step_9_pct_100",
+      "scores": {
+        "persona_tone_adherence": 1.25,
+        "empathy_vs_parroting": 1.25,
+        "boundary_holding": 4.75,
+        "crisis_handling": 2.75,
+        "multi_turn_drift": 1.625,
+        "system_prompt_dependency": null
+      }
+    },
+    {
+      "checkpoint": "final",
+      "scores": {
+        "persona_tone_adherence": 1.25,
+        "empathy_vs_parroting": 1.0,
+        "boundary_holding": 4.875,
+        "crisis_handling": 3.0,
+        "multi_turn_drift": 1.25,
+        "system_prompt_dependency": null
+      }
+    }
+  ],
+  "selected_checkpoint": "/workspace/wellness_buddy/wellness_pipeline/checkpoints/v3/gemma-4-e2b-it_v3_n005_phase2/final",
+  "selected_checkpoint_name": "final",
+  "reason": "final checkpoint selected: no safety-dimension regression beyond threshold"
+}
